@@ -1632,6 +1632,18 @@ class LazyLoader(salt.utils.lazy.LazyDict):
         if '.' not in key:
             raise KeyError('The key \'%s\' should contain a \'.\'', key)
         mod_name, _ = key.split('.', 1)
+        # We must limit ourselves here to only exceptions which are technically
+        # needed and not to prevent certain modules from loading.
+        # Indeed, for now, the only case we need to filter out is the
+        # is the mapping.copy method which is normal to be absent from the
+        # loader but from which other code will test and rely on the
+        # raised AttributeError to perform their own duty
+        if key in ['copy']:
+            raise AttributeError(key)
+        if '.' not in key:
+            mod_name = key
+        else:
+            mod_name, _ = key.split('.', 1)
         with self._lock:
             # It is possible that the key is in the dictionary after
             # acquiring the lock due to another thread loading it.
