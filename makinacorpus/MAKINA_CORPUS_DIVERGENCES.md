@@ -22,6 +22,15 @@ DIVERGENCES TO KEEP AT ALL COSTS:
     - tried to rediscuss on https://github.com/saltstack/salt/issues/23317
 
 
+
+Backports
+-----------
+- [backport 1](https://github.com/makinacorpus/salt/commit/bed138bfa1e375ca65441c6821e398895d69d7aa)
+- [backport 2](https://github.com/makinacorpus/salt/commit/1d11453c466c62712f741735cbffec4d7cdb0665)
+- [backport 3](https://github.com/makinacorpus/salt/commit/0e0b8bedaed001b2359873c1be2d38e5376303df)
+- [backport 4](https://github.com/makinacorpus/salt/commit/7150efe9661c9bc759b1e226f2f043822d051f92)
+
+
 Removed changesets
 -------------------
 - [environ hotfix / 337ed10cfc9f53724e653e9d3ccef317005d9817](https://github.com/makinacorpus/salt/commit/337ed10cfc9f53724e653e9d3ccef317005d9817)
