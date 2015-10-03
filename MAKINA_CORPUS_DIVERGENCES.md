@@ -26,3 +26,6 @@ DIVERGENCES TO KEEP AT ALL COSTS:
        - See https://github.com/saltstack/salt/issues/24480
 
 - iptables needs sync, currently this is a mix from stable/develop, waiting again a bit
+
+- We unmarked the makina corpus repo to be an official fork to keep only one branch, without release.
+  This drastically improve git clones as the repo is for now < 50 mo (~160mo for saltstack's one)
