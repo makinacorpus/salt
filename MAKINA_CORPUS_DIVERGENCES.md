@@ -1,18 +1,18 @@
+MakinaCorpus Saltstack fork
+=======================================
+
+- We unmarked the makina corpus repo to be an official fork to keep only one branch, without release.
+  This drastically improve git clones as the repo is for now < 50 mo (~160mo for saltstack's one)
+- We contribute a lot to salt, but pullrequests will be done via other forks to avoid growing this repo size
+
 DIVERGENCES TO KEEP AT ALL COSTS:
 ----------------------------------
-
 - [protect VT logs from unicode strings / 0e79e9a4cd56b551a560dd94f82511062c7fa924](https://github.com/makinacorpus/salt/commit/0e79e9a4cd56b551a560dd94f82511062c7fa924)
 
     - Upstream did not accepted this trivial changeset, even as a later changeable changeset, issue is pending for more than a while here:
 
         - https://github.com/saltstack/salt/issues/21441
         - https://github.com/saltstack/salt/pull/20918
-
-- zcbuildout now living in [makina-states/salt_fork](https://github.com/makinacorpus/makina-states/tree/master/salt_fork).
-
-    - [module](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/modules/zcbuildout.py)
-    - [state](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/states/zcbuildout.py)
-
 
 - [raise appropriate AttributeEror for certain collectionmapping attributes / a1fde4c120261517c036a708adf2f33850f1cad3](https://github.com/makinacorpus/salt/commit/a1fde4c120261517c036a708adf2f33850f1cad3)
 
@@ -21,11 +21,17 @@ DIVERGENCES TO KEEP AT ALL COSTS:
     - proposed as fix but unrelated: https://github.com/saltstack/salt/pull/22950
     - tried to rediscuss on https://github.com/saltstack/salt/issues/23317
 
+
+Removed changesets
+-------------------
 - [environ hotfix / 337ed10cfc9f53724e653e9d3ccef317005d9817](https://github.com/makinacorpus/salt/commit/337ed10cfc9f53724e653e9d3ccef317005d9817)
 
        - See https://github.com/saltstack/salt/issues/24480
 
-- iptables needs sync, currently this is a mix from stable/develop, waiting again a bit
+Notes
+-------
+- zcbuildout now living in [makina-states/salt_fork](https://github.com/makinacorpus/makina-states/tree/master/salt_fork).
 
-- We unmarked the makina corpus repo to be an official fork to keep only one branch, without release.
-  This drastically improve git clones as the repo is for now < 50 mo (~160mo for saltstack's one)
+    - [module](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/modules/zcbuildout.py)
+    - [state](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/states/zcbuildout.py)
+
