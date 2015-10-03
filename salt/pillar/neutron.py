@@ -8,7 +8,6 @@ inside of Neutron, to all minions.
 :depends:  - python-neutronclient
 
 A keystone profile must be used for the pillar to work (no generic keystone
-
 configuration here). For example:
 
 .. code-block:: yaml

@@ -437,8 +437,7 @@ def build_rule(table='filter', chain=None, command=None, position='', full=None,
         else:
             rule.append('--{0} {1}'.format(item, kwargs[item]))
 
-    rule += ' '.join(after_jump)
-
+    rule += after_jump
 
     if full in ['True', 'true']:
         if not table:

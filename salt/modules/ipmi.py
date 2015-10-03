@@ -302,7 +302,6 @@ def get_channel_access(channel=14, read_mode='non_volatile', **kwargs):
                     4: 'administrator',
                     5: 'proprietary',
                 }
-
             }
 
     CLI Examples:

@@ -47,7 +47,6 @@ service, then set the reload value to True:
 # Import Python libs
 from __future__ import absolute_import
 import time
-from salt.utils.dictupdate import update as dictupdate
 
 
 def __virtual__():
