@@ -4562,8 +4562,6 @@ def reconfigure(name,
 
     name
         Name of the container.
-
-
     utsname
         utsname of the container.
 
