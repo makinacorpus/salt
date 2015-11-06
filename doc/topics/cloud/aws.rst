@@ -118,7 +118,7 @@ parameters are discussed in more detail below.
       keyname: my_test_key
 
       # This one should NOT be specified if VPC was not configured in AWS to be
-      # the default. It might cause an error message which sais that network
+      # the default. It might cause an error message which says that network
       # interfaces and an instance-level security groups may not be specified
       # on the same request.
       #
@@ -890,6 +890,13 @@ point, and should be stored immediately.
 
     salt-cloud -f create_keypair ec2 keyname=mykeypair
 
+Importing a Key Pair
+-------------------
+
+.. code-block:: bash
+
+    salt-cloud -f import_keypair ec2 keyname=mykeypair file=/path/to/id_rsa.pub
+
 
 Show a Key Pair
 ---------------
@@ -962,7 +969,7 @@ the network interfaces of your virtual machines, for example:-
           # Uncomment this to associate an existing Elastic IP Address with
           # this network interface:
           #
-          # associate_eip: eni-XXXXXXXX
+          # associate_eip: eipalloc-XXXXXXXX
 
           # You can allocate more than one IP address to an interface. Use the
           # 'ip addr list' command to see them.

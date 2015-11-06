@@ -53,6 +53,7 @@ Full list of builtin execution modules
     cabal
     cassandra
     cassandra_cql
+    chassis
     chef
     chocolatey
     cloud
@@ -65,7 +66,6 @@ Full list of builtin execution modules
     cpan
     cron
     cyg
-    cytest
     daemontools
     darwin_pkgutil
     darwin_sysctl
@@ -88,6 +88,7 @@ Full list of builtin execution modules
     dockerng
     dpkg
     drac
+    dracr
     drbd
     ebuild
     eix
@@ -105,6 +106,7 @@ Full list of builtin execution modules
     freebsdpkg
     freebsdports
     freebsdservice
+    fsutils
     gem
     genesis
     gentoo_service
@@ -147,6 +149,7 @@ Full list of builtin execution modules
     kmod
     launchctl
     layman
+    ldap3
     ldapmod
     linux_acl
     linux_lvm

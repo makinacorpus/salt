@@ -176,6 +176,7 @@ import os
 
 # Import salt libs
 import salt.utils.gitfs
+import salt.utils.dictupdate
 from salt.exceptions import FileserverConfigError
 from salt.pillar import Pillar
 
@@ -245,10 +246,18 @@ def ext_pillar(minion_id, repo, pillar_dirs):
         pillar.init_remotes(repo, PER_REMOTE_OVERRIDES)
         pillar.checkout()
         ret = {}
+        merge_strategy = __opts__.get(
+            'pillar_source_merging_strategy',
+            'smart'
+        )
         for pillar_dir, env in six.iteritems(pillar.pillar_dirs):
-            opts['pillar_roots'] = {env: [pillar_dir]}
+            opts['pillar_roots'] = {env: [d for (d, e) in six.iteritems(pillar.pillar_dirs) if env == e]}
             local_pillar = Pillar(opts, __grains__, minion_id, env)
-            ret.update(local_pillar.compile_pillar(ext=False))
+            ret = salt.utils.dictupdate.merge(
+                ret,
+                local_pillar.compile_pillar(ext=False),
+                strategy=merge_strategy
+            )
         return ret
 
 
@@ -388,9 +397,9 @@ def _legacy_git_pillar(minion_id, repo_string, pillar_dirs):
             log.warning('Unrecognized extra parameter: {0}'.format(key))
 
     # environment is "different" from the branch
-    branch, _, environment = branch_env.partition(':')
+    cfg_branch, _, environment = branch_env.partition(':')
 
-    gitpil = _LegacyGitPillar(branch, repo_location, __opts__)
+    gitpil = _LegacyGitPillar(cfg_branch, repo_location, __opts__)
     branch = gitpil.branch
 
     if environment == '':
@@ -404,7 +413,9 @@ def _legacy_git_pillar(minion_id, repo_string, pillar_dirs):
 
     pillar_dirs.setdefault(pillar_dir, {})
 
-    if pillar_dirs[pillar_dir].get(branch, False):
+    if cfg_branch == '__env__' and branch not in ['master', 'base']:
+        gitpil.update()
+    elif pillar_dirs[pillar_dir].get(branch, False):
         return {}  # we've already seen this combo
 
     pillar_dirs[pillar_dir].setdefault(branch, True)
@@ -420,7 +431,7 @@ def _legacy_git_pillar(minion_id, repo_string, pillar_dirs):
 
     pil = Pillar(opts, __grains__, minion_id, branch)
 
-    return pil.compile_pillar()
+    return pil.compile_pillar(ext=False)
 
 
 def _update(branch, repo_location):

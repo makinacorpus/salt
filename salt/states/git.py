@@ -289,12 +289,16 @@ def latest(name,
 
     depth
         Defines depth in history when git a clone is needed in order to ensure
-        latest. E.g. ``depth: 1`` is usefull when deploying from a repository
+        latest. E.g. ``depth: 1`` is useful when deploying from a repository
         with a long history. Use rev to specify branch. This is not compatible
         with tags or revision IDs.
 
     identity
         A path on the minion server to a private key to use over SSH
+
+        Key can be specified as a SaltStack file server URL, eg. salt://location/identity_file
+
+        .. versionadded:: Boron
 
     https_user
         HTTP Basic Auth username for HTTPS (only) clones
@@ -340,6 +344,18 @@ def latest(name,
             - require:
               - pkg: git
               - ssh_known_hosts: gitlab.example.com
+
+        git-website-staging:
+          git.latest:
+            - name: ssh://git@gitlab.example.com:user/website.git
+            - rev: gh-pages
+            - target: /usr/share/nginx/staging
+            - identity: salt://website/id_rsa
+            - require:
+              - pkg: git
+              - ssh_known_hosts: gitlab.example.com
+
+            .. versionadded:: Boron
 
         git-website-prod:
           git.latest:
@@ -419,6 +435,19 @@ def latest(name,
         elif not isinstance(identity, list):
             return _fail(ret, 'identity must be either a list or a string')
         for ident_path in identity:
+            if 'salt://' in ident_path:
+                try:
+                    ident_path = __salt__['cp.cache_file'](ident_path)
+                except IOError as exc:
+                    log.error(
+                        'Failed to cache {0}: {1}'.format(ident_path, exc)
+                    )
+                    return _fail(
+                        ret,
+                        'identity \'{0}\' does not exist.'.format(
+                            ident_path
+                        )
+                    )
             if not os.path.isabs(ident_path):
                 return _fail(
                     ret,
@@ -592,6 +621,7 @@ def latest(name,
                         base_rev = __salt__['git.rev_parse'](
                             target,
                             branch + '^{commit}',
+                            user=user,
                             ignore_retcode=True)
                     except CommandExecutionError as exc:
                         return _fail(
@@ -640,6 +670,7 @@ def latest(name,
                                     local_copy = __salt__['git.rev_parse'](
                                         target,
                                         desired_upstream,
+                                        user=user,
                                         ignore_retcode=True)
                                 except CommandExecutionError:
                                     pass
@@ -658,6 +689,7 @@ def latest(name,
                                     local_tag_sha1 = __salt__['git.rev_parse'](
                                         target,
                                         rev + '^{commit}',
+                                        user=user,
                                         ignore_retcode=True)
                                 except CommandExecutionError:
                                     # Shouldn't happen if the tag exists

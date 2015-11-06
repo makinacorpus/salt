@@ -9,23 +9,29 @@ Debian Installation
 Installation from the SaltStack Repository
 ==========================================
 
-Debian 8 packages are available in the SaltStack Debian repository.
+2015.8.0 and later packages for Debian 8 (Jessie) are available in the
+SaltStack repository.
 
-To install using the SaltStack Debian repository:
+.. important::
+  The repository folder structure changed between 2015.8.0 and 2015.8.1. If you
+  previously configured this repository, verify that your paths contain
+  ``latest``.
+
+To install using the SaltStack repository:
 
 #. Run the following command to import the SaltStack repository key:
 
    .. code-block:: bash
 
-       wget -O - https://repo.saltstack.com/apt/debian/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
+       wget -O - https://repo.saltstack.com/apt/debian/latest/SALTSTACK-GPG-KEY.pub | sudo apt-key add -
 
 #. Add the following line to ``/etc/apt/sources.list``:
 
    .. code-block:: bash
 
-       deb http://repo.saltstack.com/apt/debian jessie contrib
+       deb http://repo.saltstack.com/apt/debian/latest jessie main
 
-#. Run ``sudo apt-get update``
+#. Run ``sudo apt-get update``.
 
 #. Install the salt-minion, salt-master, or other Salt components:
 
@@ -33,14 +39,43 @@ To install using the SaltStack Debian repository:
    - ``apt-get install salt-minion``
    - ``apt-get install salt-ssh``
    - ``apt-get install salt-syndic``
-   - ``apt-get install salt-cloud``
 
-Configure Apt
--------------
+Post-installation tasks
+-----------------------
 
-Currently the latest packages for Debian Old Stable, Stable, and
-Unstable (Squeeze, Wheezy, and Sid) are published in our
-(saltstack.com) Debian repository.
+Now, go to the :doc:`Configuring Salt </ref/configuration/index>` page.
+
+Installation from the Community Repository
+==========================================
+
+The SaltStack community maintains a Debian repository at debian.saltstack.com.
+Packages for Debian Old Stable, Stable, and Unstable (Wheezy, Jessie, and Sid)
+for Salt 0.16 and later are published in this repository.
+
+.. note::
+   Packages in this repository are community built, and it can
+   take a little while until the latest SaltStack release is available
+   in this repository.
+
+Jessie (Stable)
+---------------
+
+For Jessie, the following line is needed in either
+``/etc/apt/sources.list`` or a file in ``/etc/apt/sources.list.d``:
+
+.. code-block:: bash
+
+    deb http://debian.saltstack.com/debian jessie-saltstack main
+
+Wheezy (Old Stable)
+-------------------
+
+For wheezy, the following line is needed in either
+``/etc/apt/sources.list`` or a file in ``/etc/apt/sources.list.d``:
+
+.. code-block:: bash
+
+    deb http://debian.saltstack.com/debian wheezy-saltstack main
 
 Squeeze (Old Old Stable)
 ------------------------
@@ -54,28 +89,6 @@ following to ``/etc/apt/sources.list`` or a file in
 
     deb http://debian.saltstack.com/debian squeeze-saltstack main
     deb http://backports.debian.org/debian-backports squeeze-backports main
-
-
-
-Wheezy (Old Stable)
--------------------
-
-For wheezy, the following line is needed in either
-``/etc/apt/sources.list`` or a file in ``/etc/apt/sources.list.d``:
-
-.. code-block:: bash
-
-    deb http://debian.saltstack.com/debian wheezy-saltstack main
-
-Jessie (Stable)
----------------
-
-For jessie, the following line is needed in either
-``/etc/apt/sources.list`` or a file in ``/etc/apt/sources.list.d``:
-
-.. code-block:: bash
-
-    deb http://debian.saltstack.com/debian jessie-saltstack main
 
 Sid (Unstable)
 --------------
@@ -121,17 +134,10 @@ Install the Salt master, minion, or syndic from the repository with the apt-get
 command. These examples each install one daemon, but more than one package name
 may be given at a time:
 
-.. code-block:: bash
-
-    apt-get install salt-master
-
-.. code-block:: bash
-
-    apt-get install salt-minion
-
-.. code-block:: bash
-
-    apt-get install salt-syndic
+   - ``apt-get install salt-master``
+   - ``apt-get install salt-minion``
+   - ``apt-get install salt-ssh``
+   - ``apt-get install salt-syndic``
 
 .. _Debian-config:
 
@@ -139,5 +145,4 @@ Post-installation tasks
 -----------------------
 
 Now, go to the :doc:`Configuring Salt </ref/configuration/index>` page.
-
 

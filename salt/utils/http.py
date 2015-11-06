@@ -187,10 +187,11 @@ def query(url,
         # Make sure no secret fields show up in logs
         if isinstance(data, dict):
             log_data = data.copy()
-            for item in data:
-                for field in hide_fields:
-                    if item == field:
-                        log_data[item] = 'XXXXXXXXXX'
+            if isinstance(hide_fields, list):
+                for item in data:
+                    for field in hide_fields:
+                        if item == field:
+                            log_data[item] = 'XXXXXXXXXX'
             log.trace('Request POST Data: {0}'.format(pprint.pformat(log_data)))
         else:
             log.trace('Request POST Data: {0}'.format(pprint.pformat(data)))
@@ -298,14 +299,18 @@ def query(url,
         )
         result.raise_for_status()
         if stream is True or handle is True:
-            return {'handle': result}
+            return {
+                'handle': result,
+                'body': result.content,
+            }
 
         log.debug('Final URL location of Response: {0}'.format(sanitize_url(result.url, hide_fields)))
 
         result_status_code = result.status_code
         result_headers = result.headers
-        result_text = result.text
+        result_text = result.content
         result_cookies = result.cookies
+        ret['body'] = result.content
     elif backend == 'urllib2':
         request = urllib_request.Request(url_full, data)
         handlers = [
@@ -382,11 +387,15 @@ def query(url,
         except URLError as exc:
             return {'Error': str(exc)}
         if stream is True or handle is True:
-            return {'handle': result}
+            return {
+                'handle': result,
+                'body': result.content,
+            }
 
         result_status_code = result.code
         result_headers = result.headers.headers
         result_text = result.read()
+        ret['body'] = result_text
     else:
         # Tornado
         req_kwargs = {}
@@ -451,11 +460,15 @@ def query(url,
             return ret
 
         if stream is True or handle is True:
-            return {'handle': result}
+            return {
+                'handle': result,
+                'body': result.body,
+            }
 
         result_status_code = result.code
         result_headers = result.headers
         result_text = result.body
+        ret['body'] = result.body
         if 'Set-Cookie' in result_headers.keys() and cookies is not None:
             result_cookies = parse_cookie_header(result_headers['Set-Cookie'])
             for item in result_cookies:
@@ -581,7 +594,7 @@ def get_ca_bundle(opts=None):
         # RedHat is also very common
         '/etc/pki/tls/certs/ca-bundle.crt',
         '/etc/pki/tls/certs/ca-bundle.trust.crt',
-        # RedHat's link for Debian compatability
+        # RedHat's link for Debian compatibility
         '/etc/ssl/certs/ca-bundle.crt',
         # Suse has an unusual path
         '/var/lib/ca-certificates/ca-bundle.pem',
@@ -808,11 +821,31 @@ def sanitize_url(url, hide_fields):
         if len(url_comps) > 1:
             log_url += '?'
         for pair in url_comps[1:]:
+            url_tmp = None
             for field in hide_fields:
-                if pair.startswith('{0}='.format(field)):
-                    log_url += '{0}=XXXXXXXXXX&'.format(field)
+                comps_list = pair.split('&')
+                if url_tmp:
+                    url_tmp = url_tmp.split('&')
+                    url_tmp = _sanitize_url_components(url_tmp, field)
                 else:
-                    log_url += '{0}&'.format(pair)
+                    url_tmp = _sanitize_url_components(comps_list, field)
+            log_url += url_tmp
         return log_url.rstrip('&')
     else:
         return str(url)
+
+
+def _sanitize_url_components(comp_list, field):
+    '''
+    Recursive function to sanitize each component of the url.
+    '''
+    if len(comp_list) == 0:
+        return ''
+    elif comp_list[0].startswith('{0}='.format(field)):
+        ret = '{0}=XXXXXXXXXX&'.format(field)
+        comp_list.remove(comp_list[0])
+        return ret + _sanitize_url_components(comp_list, field)
+    else:
+        ret = '{0}&'.format(comp_list[0])
+        comp_list.remove(comp_list[0])
+        return ret + _sanitize_url_components(comp_list, field)

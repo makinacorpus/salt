@@ -100,14 +100,18 @@ def extracted(name,
     archive_user
         The user to own each extracted file.
 
-        .. deprecated:: 2014.7.2
+        .. deprecated:: Boron
             replaced by standardized `user` parameter.
 
     user
         The user to own each extracted file.
 
+        .. versionadded:: 2015.8.0
+
     group
         The group to own each extracted file.
+
+        .. versionadded:: 2015.8.0
 
     if_missing
         Some archives, such as tar, extract themselves in a subfolder.
@@ -214,7 +218,7 @@ def extracted(name,
 
     log.debug('Extract {0} in {1}'.format(filename, name))
     if archive_format == 'zip':
-        files = __salt__['archive.cmd_unzip'](filename, name, trim_output=trim_output)
+        files = __salt__['archive.unzip'](filename, name, trim_output=trim_output)
     elif archive_format == 'rar':
         files = __salt__['archive.unrar'](filename, name, trim_output=trim_output)
     else:

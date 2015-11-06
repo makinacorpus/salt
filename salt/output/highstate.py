@@ -71,6 +71,7 @@ import textwrap
 import salt.utils
 import salt.utils.locales
 import salt.output
+from salt.utils.locales import sdecode
 
 # Import 3rd-party libs
 import salt.ext.six as six
@@ -111,11 +112,12 @@ def _format_host(host, data):
                       .format(hcolor, colors)))
         for err in data:
             if strip_colors:
-                err = salt.output.strip_esc_sequence(err)
+                err = salt.output.strip_esc_sequence(sdecode(err))
             hstrs.append((u'{0}----------\n    {1}{2[ENDC]}'
                           .format(hcolor, err, colors)))
     if isinstance(data, dict):
         # Verify that the needed data is present
+        data_tmp = {}
         for tname, info in six.iteritems(data):
             if isinstance(info, dict) and '__run_num__' not in info:
                 err = (u'The State execution failed to record the order '
@@ -123,6 +125,9 @@ def _format_host(host, data):
                        'return missing data is:')
                 hstrs.insert(0, pprint.pformat(info))
                 hstrs.insert(0, err)
+            if isinstance(info, dict) and 'result' in info:
+                data_tmp[tname] = info
+        data = data_tmp
         # Everything rendered as it should display the output
         for tname in sorted(
                 data,

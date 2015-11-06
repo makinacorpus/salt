@@ -31,7 +31,7 @@ class SSHState(salt.state.State):
         self.wrapper = wrapper
         super(SSHState, self).__init__(opts, pillar)
 
-    def load_modules(self, data=None):
+    def load_modules(self, data=None, proxy=None):
         '''
         Load up the modules for remote compilation via ssh
         '''
@@ -136,14 +136,14 @@ def prep_trans_tar(file_client, chunks, file_refs, pillar=None):
             [salt.utils.url.create('_grains')],
             [salt.utils.url.create('_renderers')],
             [salt.utils.url.create('_returners')],
-            [salt.utils.url.create('_outputters')],
+            [salt.utils.url.create('_output')],
             [salt.utils.url.create('_utils')],
             ]
     with salt.utils.fopen(lowfn, 'w+') as fp_:
         fp_.write(json.dumps(chunks))
     if pillar:
         with salt.utils.fopen(pillarfn, 'w+') as fp_:
-            fp_.write(json.dumps(pillar))
+            fp_.write(json.dumps(pillar._dict()))
     for saltenv in file_refs:
         file_refs[saltenv].extend(sync_refs)
         env_root = os.path.join(gendir, saltenv)
