@@ -301,21 +301,34 @@ def avail_sizes(conn=None):
 def avail_images(conn=None):
     '''
     Return a dict of all available VM images on the cloud provider with
-    relevant data
+    relevant data.
 
     Note that for GCE, there are custom images within the project, but the
     generic images are in other projects.  This returns a dict of images in
-    the project plus images in 'debian-cloud' and 'centos-cloud' (If there is
-    overlap in names, the one in the current project is used.)
+    the project plus images in well-known public projects that provide supported
+    images, as listed on this page:
+    https://cloud.google.com/compute/docs/operating-systems/
+
+    If image names overlap, the image in the current project is used.
     '''
     if not conn:
         conn = get_conn()
 
-    project_images = conn.list_images()
-    debian_images = conn.list_images('debian-cloud')
-    centos_images = conn.list_images('centos-cloud')
+    all_images = []
+    # The list of public image projects can be found via:
+    #   % gcloud compute images list
+    # and looking at the "PROJECT" column in the output.
+    public_image_projects = (
+        'centos-cloud', 'coreos-cloud', 'debian-cloud', 'google-containers',
+        'opensuse-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
+        'windows-cloud'
+    )
+    for project in public_image_projects:
+        all_images.extend(conn.list_images(project))
 
-    all_images = debian_images + centos_images + project_images
+    # Finally, add the images in this current project last so that it overrides
+    # any image that also exists in any public project.
+    all_images.extend(conn.list_images())
 
     ret = {}
     for img in all_images:
@@ -404,17 +417,12 @@ def __get_host(node, vm_):
     '''
     Return public IP, private IP, or hostname for the libcloud 'node' object
     '''
-    if __get_ssh_interface(vm_) == 'private_ips':
+    if __get_ssh_interface(vm_) == 'private_ips' or vm_['external_ip'] is None:
         ip_address = node.private_ips[0]
         log.info('Salt node data. Private_ip: {0}'.format(ip_address))
     else:
         ip_address = node.public_ips[0]
         log.info('Salt node data. Public_ip: {0}'.format(ip_address))
-
-#    if len(node.public_ips) > 0:
-#        return node.public_ips[0]
-#    if len(node.private_ips) > 0:
-#        return node.private_ips[0]
 
     if len(ip_address) > 0:
         return ip_address
@@ -2023,10 +2031,20 @@ def request_instance(vm_):
         'ex_network': __get_network(conn, vm_),
         'ex_tags': __get_tags(vm_),
         'ex_metadata': __get_metadata(vm_),
-        'external_ip': config.get_cloud_config_value(
-                'external_ip', vm_, __opts__, default='ephemeral'
-            )
     }
+    external_ip = config.get_cloud_config_value(
+        'external_ip', vm_, __opts__, default='ephemeral'
+    )
+
+    if external_ip.lower() == 'ephemeral':
+        external_ip = 'ephemeral'
+    elif external_ip == 'None':
+        external_ip = None
+    else:
+        region = '-'.join(kwargs['location'].name.split('-')[:2])
+        kwargs['external_ip'] = __create_orget_address(conn, kwargs['external_ip'], region)
+    kwargs['external_ip'] = external_ip
+    vm_['external_ip'] = external_ip
 
     if LIBCLOUD_VERSION_INFO > (0, 15, 1):
 
@@ -2048,14 +2066,6 @@ def request_instance(vm_):
                 'The value of \'ex_disk_type\' needs to be one of: '
                 '\'pd-standard\', \'pd-ssd\''
             )
-
-    if 'external_ip' in kwargs and kwargs['external_ip'] == "None":
-        kwargs['external_ip'] = None
-    elif kwargs['external_ip'] != 'ephemeral':
-        region = '-'.join(kwargs['location'].name.split('-')[:2])
-        kwargs['external_ip'] = __create_orget_address(conn,
-                                                       kwargs['external_ip'],
-                                                       region)
 
     log.info('Creating GCE instance {0} in {1}'.format(vm_['name'],
         kwargs['location'].name)

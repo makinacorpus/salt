@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
 '''
 A module to manage software on Windows
-
-:depends:   - win32com
-            - win32con
-            - win32api
-            - pywintypes
 '''
 
 # Import python libs
@@ -20,8 +15,7 @@ from distutils.version import LooseVersion  # pylint: disable=import-error,no-na
 import salt.ext.six as six
 # pylint: disable=import-error
 try:
-    import win32api
-    import win32con
+    from salt.ext.six.moves import winreg as _winreg  # pylint: disable=import-error,no-name-in-module
     HAS_DEPENDENCIES = True
 except ImportError:
     HAS_DEPENDENCIES = False
@@ -116,7 +110,7 @@ def latest_version(*names, **kwargs):
     return ret
 
 # available_version is being deprecated
-available_version = latest_version
+available_version = salt.utils.alias_function(latest_version, 'available_version')
 
 
 def upgrade_available(name):
@@ -268,62 +262,22 @@ def _get_reg_software():
     display name as the key and the version as the value
     '''
     reg_software = {}
-    # This is a list of default OS reg entries that don't seem to be installed
-    # software and no version information exists on any of these items
-    ignore_list = ['AddressBook',
-                   'Connection Manager',
-                   'DirectDrawEx',
-                   'Fontcore',
-                   'IE40',
-                   'IE4Data',
-                   'IE5BAKEX',
-                   'IEData',
-                   'MobileOptionPack',
-                   'SchedulingAgent',
-                   'WIC'
-                   ]
-    encoding = locale.getpreferredencoding()
 
     #attempt to corral the wild west of the multiple ways to install
     #software in windows
     reg_entries = dict(_get_machine_keys().items())
     for reg_hive, reg_keys in six.iteritems(reg_entries):
         for reg_key in reg_keys:
-            try:
-                reg_handle = win32api.RegOpenKeyEx(
-                    reg_hive,
-                    reg_key,
-                    0,
-                    win32con.KEY_READ)
-            except Exception:
-                pass
-                # Uninstall key may not exist for all users
-            for name, num, blank, time in win32api.RegEnumKeyEx(reg_handle):
-                prd_uninst_key = "\\".join([reg_key, name])
-                # These reg values aren't guaranteed to exist
-                windows_installer = _get_reg_value(
-                    reg_hive,
-                    prd_uninst_key,
-                    'WindowsInstaller')
 
-                prd_name = _get_reg_value(
-                    reg_hive,
-                    prd_uninst_key,
-                    "DisplayName")
-                try:
-                    prd_name = prd_name.decode(encoding)
-                except Exception:
-                    pass
-                prd_ver = _get_reg_value(
-                    reg_hive,
-                    prd_uninst_key,
-                    "DisplayVersion")
-                if name not in ignore_list:
-                    if prd_name != 'Not Found':
-                        # some MS Office updates don't register a product name which means
-                        # their information is useless
-                        if prd_name != '':
-                            reg_software[prd_name] = prd_ver
+            reg_handle = _open_registry_key(reg_hive, reg_key)
+            if reg_handle is None:
+                continue
+
+            products = _get_product_information(reg_hive, reg_key, reg_handle)
+            reg_software.update(products)
+
+            _winreg.CloseKey(reg_handle)
+
     return reg_software
 
 
@@ -338,25 +292,97 @@ def _get_machine_keys():
         "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
         "Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
     ]
-    machine_hive = win32con.HKEY_LOCAL_MACHINE
+    machine_hive = _winreg.HKEY_LOCAL_MACHINE
     machine_hive_and_keys[machine_hive] = machine_keys
     return machine_hive_and_keys
 
 
-def _get_reg_value(reg_hive, reg_key, value_name=''):
-    '''
-    Read one value from Windows registry.
-    If 'name' is empty map, reads default value.
-    '''
+def _open_registry_key(reg_hive, reg_key):
+    reg_handle = None
     try:
-        key_handle = win32api.RegOpenKeyEx(
-            reg_hive, reg_key, 0, win32con.KEY_ALL_ACCESS)
-        value_data, value_type = win32api.RegQueryValueEx(key_handle,
-                                                          value_name)
-        win32api.RegCloseKey(key_handle)
+        flags = _get_flags(reg_hive)
+
+        reg_handle = _winreg.OpenKeyEx(
+            reg_hive,
+            reg_key,
+            0,
+            flags)
+    # Unsinstall key may not exist for all users
     except Exception:
-        value_data = 'Not Found'
-    return value_data
+        pass
+
+    return reg_handle
+
+
+def _get_flags(reg_hive):
+    try:
+        reflect = _winreg.QueryReflectionKey(reg_hive)
+    except NotImplemented:
+        flags = reg_hive
+    else:
+        if reflect:
+            flags = _winreg.KEY_READ | _winreg.KEY_WOW64_64KEY
+        else:
+            flags = _winreg.KEY_READ | _winreg.KEY_WOW64_32KEY
+
+    return flags
+
+
+def _get_product_information(reg_hive, reg_key, reg_handle):
+
+    # This is a list of default OS reg entries that don't seem to be installed
+    # software and no version information exists on any of these items
+    # Also, some MS Office updates don't register a product name which means
+    # their information is useless.
+    ignore_list = ['AddressBook',
+                   'Connection Manager',
+                   'DirectDrawEx',
+                   'Fontcore',
+                   'IE40',
+                   'IE4Data',
+                   'IE5BAKEX',
+                   'IEData',
+                   'MobileOptionPack',
+                   'SchedulingAgent',
+                   'WIC',
+                   'Not Found']
+    encoding = locale.getpreferredencoding()
+
+    products = {}
+    try:
+        i = 0
+        while True:
+            product_key = None
+            asubkey = _winreg.EnumKey(reg_handle, i)
+            rd_uninst_key = "\\".join([reg_key, asubkey])
+            displayName = ''
+            displayVersion = ''
+            try:
+                # these are not garuanteed to exist
+                product_key = _open_registry_key(reg_hive, rd_uninst_key)
+                displayName, value_type = _winreg.QueryValueEx(product_key, "DisplayName")
+                try:
+                    displayName = displayName.decode(encoding)
+                except Exception:
+                    pass
+                displayVersion, value_type = _winreg.QueryValueEx(product_key, "DisplayVersion")
+            except Exception:
+                pass
+
+            if product_key is not None:
+                _winreg.CloseKey(product_key)
+            i += 1
+
+            if displayName not in ignore_list:
+                # some MS Office updates don't register a product name which means
+                # their information is useless
+                if displayName != '':
+                    products[displayName] = displayVersion
+
+    except WindowsError:  # pylint: disable=E0602
+        pass
+
+    return products
 
 
 def refresh_db(saltenv='base'):
@@ -700,37 +726,61 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
         cached_pkg = cached_pkg.replace('/', '\\')
         cache_path, _ = os.path.split(cached_pkg)
 
-        # Get settings for msiexec and allusers
-        msiexec = pkginfo[version_num].get('msiexec')
-        all_users = pkginfo[version_num].get('allusers')
-
-        # all_users defaults to True
-        if all_users is None:
-            all_users = True
-
         # Get install flags
         install_flags = '{0}'.format(pkginfo[version_num].get('install_flags'))
         if options and options.get('extra_install_flags'):
             install_flags = '{0} {1}'.format(install_flags,
                                              options.get('extra_install_flags', ''))
 
-        # Build the install command
-        cmd = []
-        if msiexec:
-            cmd.extend(['msiexec', '/i'])
-        cmd.append(cached_pkg)
-        cmd.extend(shlex.split(install_flags))
-        if msiexec and all_users:
-            cmd.append('ALLUSERS="1"')
-
         # Install the software
-        result = __salt__['cmd.run_stdout'](cmd, cache_path, output_loglevel='trace', python_shell=False)
-        if result:
-            log.error('Failed to install {0}'.format(pkg_name))
-            log.error('error message: {0}'.format(result))
-            ret[pkg_name] = {'failed': result}
+        # Check Use Scheduler Option
+        if pkginfo[version_num].get('use_scheduler', False):
+
+            # Build Scheduled Task Parameters
+            if pkginfo[version_num].get('msiexec'):
+                cmd = 'msiexec.exe'
+                arguments = ['/i', cached_pkg]
+                if pkginfo['version_num'].get('allusers', True):
+                    arguments.append('ALLUSERS="1"')
+                arguments.extend(shlex.split(install_flags))
+            else:
+                cmd = cached_pkg
+                arguments = shlex.split(install_flags)
+
+            # Create Scheduled Task
+            __salt__['task.create_task'](name='update-salt-software',
+                                         user_name='System',
+                                         force=True,
+                                         action_type='Execute',
+                                         cmd=cmd,
+                                         arguments=' '.join(arguments),
+                                         start_in=cache_path,
+                                         trigger_type='Once',
+                                         start_date='1975-01-01',
+                                         start_time='01:00')
+            # Run Scheduled Task
+            __salt__['task.run_wait'](name='update-salt-software')
         else:
-            changed.append(pkg_name)
+            # Build the install command
+            cmd = []
+            if pkginfo[version_num].get('msiexec'):
+                cmd.extend(['msiexec', '/i', cached_pkg])
+                if pkginfo[version_num].get('allusers', True):
+                    cmd.append('ALLUSERS="1"')
+            else:
+                cmd.append(cached_pkg)
+            cmd.extend(shlex.split(install_flags))
+            # Launch the command
+            result = __salt__['cmd.run_stdout'](cmd,
+                                                cache_path,
+                                                output_loglevel='trace',
+                                                python_shell=False)
+            if result:
+                log.error('Failed to install {0}'.format(pkg_name))
+                log.error('error message: {0}'.format(result))
+                ret[pkg_name] = {'failed': result}
+            else:
+                changed.append(pkg_name)
 
     # Get a new list of installed software
     new = list_pkgs()
@@ -894,33 +944,61 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
 
         # Fix non-windows slashes
         cached_pkg = cached_pkg.replace('/', '\\')
+        cache_path, _ = os.path.split(cached_pkg)
 
         # Get parameters for cmd
         expanded_cached_pkg = str(os.path.expandvars(cached_pkg))
 
-        uninstall_flags = ''
-        if pkginfo[version_num].get('uninstall_flags'):
-            uninstall_flags = '{0}'.format(pkginfo[version_num].get('uninstall_flags'))
-
+        # Get uninstall flags
+        uninstall_flags = '{0}'.format(pkginfo[version_num].get('uninstall_flags', ''))
         if kwargs.get('extra_uninstall_flags'):
             uninstall_flags = '{0} {1}'.format(uninstall_flags,
                                                kwargs.get('extra_uninstall_flags', ""))
 
-        # Build the install command
-        cmd = []
-        if pkginfo[version_num].get('msiexec'):
-            cmd.extend(['msiexec', '/x'])
-        cmd.append(expanded_cached_pkg)
-        cmd.extend(shlex.split(uninstall_flags))
-
         # Uninstall the software
-        result = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace', python_shell=False)
-        if result:
-            log.error('Failed to install {0}'.format(target))
-            log.error('error message: {0}'.format(result))
-            ret[target] = {'failed': result}
+        # Check Use Scheduler Option
+        if pkginfo[version_num].get('use_scheduler', False):
+
+            # Build Scheduled Task Parameters
+            if pkginfo[version_num].get('msiexec'):
+                cmd = 'msiexec.exe'
+                arguments = ['/x']
+                arguments.extend(shlex.split(uninstall_flags))
+            else:
+                cmd = expanded_cached_pkg
+                arguments = shlex.split(uninstall_flags)
+
+            # Create Scheduled Task
+            __salt__['task.create_task'](name='update-salt-software',
+                                         user_name='System',
+                                         force=True,
+                                         action_type='Execute',
+                                         cmd=cmd,
+                                         arguments=' '.join(arguments),
+                                         start_in=cache_path,
+                                         trigger_type='Once',
+                                         start_date='1975-01-01',
+                                         start_time='01:00')
+            # Run Scheduled Task
+            __salt__['task.run_wait'](name='update-salt-software')
         else:
-            changed.append(target)
+            # Build the install command
+            cmd = []
+            if pkginfo[version_num].get('msiexec'):
+                cmd.extend(['msiexec', '/x', expanded_cached_pkg])
+            else:
+                cmd.append(expanded_cached_pkg)
+            cmd.extend(shlex.split(uninstall_flags))
+            # Launch the command
+            result = __salt__['cmd.run_stdout'](cmd,
+                                                output_loglevel='trace',
+                                                python_shell=False)
+            if result:
+                log.error('Failed to install {0}'.format(target))
+                log.error('error message: {0}'.format(result))
+                ret[target] = {'failed': result}
+            else:
+                changed.append(target)
 
     # Get a new list of installed software
     new = list_pkgs()

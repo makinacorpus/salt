@@ -62,6 +62,9 @@ BOOTSTRAP_SCRIPT_DISTRIBUTED_VERSION = os.environ.get(
 # Store a reference to the executing platform
 IS_WINDOWS_PLATFORM = sys.platform.startswith('win')
 
+# Store a reference wether if we're running under Python 3 and above
+IS_PY3 = sys.version_info > (3,)
+
 # Use setuptools only if the user opts-in by setting the USE_SETUPTOOLS env var
 # Or if setuptools was previously imported (which is the case when using
 # 'distribute')
@@ -137,6 +140,10 @@ def _parse_requirements_file(requirements_file):
                     # In Windows, we're installing M2CryptoWin{32,64} which comes
                     # compiled
                     continue
+            if IS_PY3 and 'futures' in line.lower():
+                # Python 3 already has futures, installing it will only break
+                # the current python installation whenever futures is imported
+                continue
             parsed_requirements.append(line)
     return parsed_requirements
 # <---- Helper Functions ---------------------------------------------------------------------------------------------
@@ -401,7 +408,7 @@ class DownloadWindowsDlls(Command):
                         from contextlib import closing
                         with closing(requests.get(furl, stream=True)) as req:
                             if req.status_code == 200:
-                                with open(fdest, 'w') as wfh:
+                                with open(fdest, 'wb') as wfh:
                                     for chunk in req.iter_content(chunk_size=4096):
                                         if chunk:  # filter out keep-alive new chunks
                                             wfh.write(chunk)
@@ -416,7 +423,7 @@ class DownloadWindowsDlls(Command):
                         req = urlopen(furl)
 
                         if req.getcode() == 200:
-                            with open(fdest, 'w') as wfh:
+                            with open(fdest, 'wb') as wfh:
                                 while True:
                                     for chunk in req.read(4096):
                                         if not chunk:

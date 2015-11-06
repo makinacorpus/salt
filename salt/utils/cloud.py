@@ -295,8 +295,13 @@ def bootstrap(vm_, opts):
     Windows) to install Salt. It will make the decision on its own as to which
     deploy function to call.
     '''
-    if salt.config.get_cloud_config_value('deploy', vm_, opts) is False \
-            and not salt.config.get_cloud_config_value('inline_script', vm_, opts):
+    deploy_config = salt.config.get_cloud_config_value(
+        'deploy',
+        vm_, opts, default=False)
+    inline_script_config = salt.config.get_cloud_config_value(
+        'inline_script',
+        vm_, opts, default=None)
+    if deploy_config is False and inline_script_config is None:
         return {
             'Error': {
                 'No Deploy': '\'deploy\' is not enabled. Not deploying.'
@@ -316,9 +321,10 @@ def bootstrap(vm_, opts):
             )
         )
     has_ssh_agent = False
-    if opts.get('ssh_agent', False) and 'SSH_AUTH_SOCK' in os.environ:
-        if stat.S_ISSOCK(os.stat(os.environ['SSH_AUTH_SOCK']).st_mode):
-            has_ssh_agent = True
+    if (opts.get('ssh_agent', False) and
+            'SSH_AUTH_SOCK' in os.environ and
+            stat.S_ISSOCK(os.stat(os.environ['SSH_AUTH_SOCK']).st_mode)):
+        has_ssh_agent = True
 
     if (key_filename is None and
             salt.config.get_cloud_config_value(
@@ -343,10 +349,6 @@ def bootstrap(vm_, opts):
             'os', vm_, opts, default='bootstrap-salt'
         ),
         vm_, opts, minion_conf
-    )
-
-    inline_script_code = salt.config.get_cloud_config_value(
-        'inline_script', vm_, opts, default=None
     )
 
     ssh_username = salt.config.get_cloud_config_value(
@@ -394,7 +396,7 @@ def bootstrap(vm_, opts):
         'salt_host': vm_.get('salt_host', vm_['ssh_host']),
         'username': ssh_username,
         'script': deploy_script_code,
-        'inline_script': inline_script_code,
+        'inline_script': inline_script_config,
         'name': vm_['name'],
         'has_ssh_agent': has_ssh_agent,
         'tmp_dir': salt.config.get_cloud_config_value(
@@ -510,24 +512,19 @@ def bootstrap(vm_, opts):
         transport=opts.get('transport', 'zeromq')
     )
 
-    if salt.config.get_cloud_config_value('inline_script', vm_, opts) \
-            and salt.config.get_cloud_config_value('deploy', vm_, opts) is False:
-
-        if inline_script_code:
-            inline_script_deployed = run_inline_script(**inline_script_kwargs)
-            if inline_script_deployed is not False:
-                log.info('Inline script(s) ha(s|ve) run on {0}'.format(vm_['name']))
+    if inline_script_config and deploy_config is False:
+        inline_script_deployed = run_inline_script(**inline_script_kwargs)
+        if inline_script_deployed is not False:
+            log.info('Inline script(s) ha(s|ve) run on {0}'.format(vm_['name']))
         ret['deployed'] = False
         return ret
-
     else:
-
         if win_installer:
             deployed = deploy_windows(**deploy_kwargs)
         else:
             deployed = deploy_script(**deploy_kwargs)
 
-        if inline_script_code:
+        if inline_script_config:
             inline_script_deployed = run_inline_script(**inline_script_kwargs)
             if inline_script_deployed is not False:
                 log.info('Inline script(s) ha(s|ve) run on {0}'.format(vm_['name']))
@@ -1215,7 +1212,6 @@ def deploy_script(host,
 
     if wait_for_port(host=host, port=port, gateway=gateway):
         log.debug('SSH port {0} on {1} is available'.format(port, host))
-        newtimeout = timeout - (time.mktime(time.localtime()) - starttime)
         if wait_for_passwd(host, port=port, username=username,
                            password=password, key_filename=key_filename,
                            ssh_timeout=ssh_timeout,
@@ -1228,7 +1224,6 @@ def deploy_script(host,
                     host, port, username
                 )
             )
-            newtimeout = timeout - (time.mktime(time.localtime()) - starttime)
             ssh_kwargs = {
                 'hostname': host,
                 'port': port,
@@ -1255,21 +1250,20 @@ def deploy_script(host,
                                tty, sudo, **ssh_kwargs)
                 if ret:
                     raise SaltCloudSystemExit(
-                        'Cant create temporary '
+                        'Can\'t create temporary '
                         'directory in {0} !'.format(tmp_dir)
                     )
             if sudo:
                 comps = tmp_dir.lstrip('/').rstrip('/').split('/')
-                if len(comps) > 0:
-                    if len(comps) > 1 or comps[0] != 'tmp':
-                        ret = root_cmd(
-                            'chown {0} \'{1}\''.format(username, tmp_dir),
-                            tty, sudo, **ssh_kwargs
-                        )
-                        if ret:
-                            raise SaltCloudSystemExit(
-                                'Cant set {0} ownership on {1}'.format(
-                                    username, tmp_dir))
+                if comps and comps[0] != 'tmp':
+                    ret = root_cmd(
+                        'chown {0} \'{1}\''.format(username, tmp_dir),
+                        tty, sudo, **ssh_kwargs
+                    )
+                    if ret:
+                        raise SaltCloudSystemExit(
+                            'Cant set {0} ownership on {1}'.format(
+                                username, tmp_dir))
 
             if not isinstance(file_map, dict):
                 file_map = {}
@@ -1696,15 +1690,14 @@ def run_inline_script(host,
             # TODO: write some tests ???
             # TODO: check edge cases (e.g. ssh gateways, salt deploy disabled, etc.)
             if root_cmd('test -e \\"{0}\\"'.format(tmp_dir), tty, sudo,
-                        allow_failure=True, **ssh_kwargs):
-                if inline_script:
-                    log.debug('Found inline script to execute.')
-                    for cmd_line in inline_script:
-                        log.info("Executing inline command: " + str(cmd_line))
-                        ret = root_cmd('sh -c "( {0} )"'.format(cmd_line),
-                                       tty, sudo, allow_failure=True, **ssh_kwargs)
-                        if ret:
-                            log.info("[" + str(cmd_line) + "] Output: " + str(ret))
+                        allow_failure=True, **ssh_kwargs) and inline_script:
+                log.debug('Found inline script to execute.')
+                for cmd_line in inline_script:
+                    log.info("Executing inline command: " + str(cmd_line))
+                    ret = root_cmd('sh -c "( {0} )"'.format(cmd_line),
+                                   tty, sudo, allow_failure=True, **ssh_kwargs)
+                    if ret:
+                        log.info("[" + str(cmd_line) + "] Output: " + str(ret))
 
     # TODO: ensure we send the correct return value
     return True
@@ -1773,13 +1766,12 @@ def _exec_ssh_cmd(cmd, error_msg=None, allow_failure=False, **kwargs):
                     raise SaltCloudPasswordError(error_msg)
             # 0.0125 is really too fast on some systems
             time.sleep(0.5)
-        if proc.exitstatus != 0:
-            if allow_failure is False:
-                raise SaltCloudSystemExit(
-                    'Command \'{0}\' failed. Exit code: {1}'.format(
-                        cmd, proc.exitstatus
-                    )
+        if proc.exitstatus != 0 and allow_failure is False:
+            raise SaltCloudSystemExit(
+                'Command \'{0}\' failed. Exit code: {1}'.format(
+                    cmd, proc.exitstatus
                 )
+            )
         return proc.exitstatus
     except vt.TerminalException as err:
         trace = traceback.format_exc()
@@ -2136,11 +2128,10 @@ def root_cmd(command, tty, sudo, allow_failure=False, **kwargs):
     logging_command = cmd + logging_command
     cmd = cmd + pipes.quote(command)
 
-    if kwargs.get('hard_timeout', None) is not None:
-        if kwargs['hard_timeout'] == int(kwargs['hard_timeout']):
-            logging_command = 'timeout {0} {1}'.format(kwargs['hard_timeout'],
-                                                       logging_command)
-            cmd = 'timeout {0} {1}'.format(kwargs['hard_timeout'], cmd)
+    hard_timeout = kwargs.get('hard_timeout')
+    if hard_timeout is not None:
+        logging_command = 'timeout {0} {1}'.format(hard_timeout, logging_command)
+        cmd = 'timeout {0} {1}'.format(hard_timeout, cmd)
 
     log.debug('SSH command: \'{0}\''.format(logging_command))
 
@@ -2489,9 +2480,8 @@ def request_minion_cachedir(
     if base is None:
         base = os.path.join(syspaths.CACHE_DIR, 'cloud')
 
-    if not fingerprint:
-        if pubkey is not None:
-            fingerprint = salt.utils.pem_finger(key=pubkey)
+    if not fingerprint and pubkey is not None:
+        fingerprint = salt.utils.pem_finger(key=pubkey)
 
     init_cachedir(base)
 
@@ -2802,10 +2792,10 @@ def cache_node(node, provider, opts):
     if 'update_cachedir' not in opts or not opts['update_cachedir']:
         return
 
-    if not os.path.exists(os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')):
+    base = os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')
+    if not os.path.exists(base):
         init_cachedir()
 
-    base = os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')
     provider, driver = provider.split(':')
     prov_dir = os.path.join(base, driver, provider)
     if not os.path.exists(prov_dir):
@@ -2833,8 +2823,6 @@ def missing_node_cache(prov_dir, node_list, provider, opts):
     for node in os.listdir(prov_dir):
         cached_nodes.append(os.path.splitext(node)[0])
 
-    log.debug(sorted(cached_nodes))
-    log.debug(sorted(node_list))
     for node in cached_nodes:
         if node not in node_list:
             delete_minion_cachedir(node, provider, opts)
@@ -2867,8 +2855,7 @@ def diff_node_cache(prov_dir, node, new_data, opts):
 
     if node is None:
         return
-    path = os.path.join(prov_dir, node)
-    path = '{0}.p'.format(path)
+    path = '{0}.p'.format(os.path.join(prov_dir, node))
 
     if not os.path.exists(path):
         event_data = _strip_cache_events(new_data, opts)
@@ -2943,8 +2930,10 @@ def _salt_cloud_force_ascii(exc):
         raise TypeError('Can\'t handle {0}'.format(exc))
 
     unicode_trans = {
-        u'\xa0': u' ',  # Convert non-breaking space to space
-        u'\u2013': u'-',  # Convert en dash to dash
+        # Convert non-breaking space to space
+        u'\xa0': u' ',
+        # Convert en dash to dash
+        u'\u2013': u'-',
     }
 
     if exc.object[exc.start:exc.end] in unicode_trans:

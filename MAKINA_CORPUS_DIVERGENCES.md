@@ -7,7 +7,7 @@ MakinaCorpus Saltstack fork
 
 DIVERGENCES TO KEEP AT ALL COSTS:
 ----------------------------------
-- [protect VT logs from unicode strings / 0e79e9a4cd56b551a560dd94f82511062c7fa924](https://github.com/makinacorpus/salt/commit/0e79e9a4cd56b551a560dd94f82511062c7fa924)
+- [protect VT logs from unicode strings / ab6a83d679dc170565afcf11c5be4906fe61c169](https://github.com/makinacorpus/salt/commit/ab6a83d679dc170565afcf11c5be4906fe61c169)
 
     - Upstream did not accepted this trivial changeset, even as a later changeable changeset, issue is pending for more than a while here:
 

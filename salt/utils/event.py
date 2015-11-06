@@ -61,7 +61,6 @@ import fnmatch
 import hashlib
 import logging
 import datetime
-import multiprocessing
 from collections import MutableMapping
 
 # Import third party libs
@@ -78,6 +77,7 @@ except ImportError:
     pass
 
 # Import salt libs
+import salt.config
 import salt.payload
 import salt.loader
 import salt.utils
@@ -85,6 +85,8 @@ import salt.utils.cache
 import salt.utils.dicttrim
 import salt.utils.process
 import salt.utils.zeromq
+import salt.log.setup
+import salt.defaults.exitcodes
 
 log = logging.getLogger(__name__)
 
@@ -119,7 +121,7 @@ def get_event(node, sock_dir=None, transport='zeromq', opts=None, listen=True):
     '''
     Return an event object suitable for the named transport
     '''
-    sock_dir = sock_dir or opts.get('sock_dir', None)
+    sock_dir = sock_dir or opts['sock_dir']
     # TODO: AIO core is separate from transport
     if transport in ('zeromq', 'tcp'):
         if node == 'master':
@@ -179,13 +181,22 @@ class SaltEvent(object):
         self.poller = zmq.Poller()
         self.cpub = False
         self.cpush = False
+
         if opts is None:
             opts = {}
-        self.opts = opts
+        if node == 'master':
+            self.opts = salt.config.DEFAULT_MASTER_OPTS.copy()
+        else:
+            self.opts = salt.config.DEFAULT_MINION_OPTS.copy()
+        self.opts.update(opts)
+
         if sock_dir is None:
-            sock_dir = opts.get('sock_dir', None)
-        if salt.utils.is_windows() and not hasattr(opts, 'ipc_mode'):
-            opts['ipc_mode'] = 'tcp'
+            sock_dir = self.opts['sock_dir']
+        else:
+            self.opts['sock_dir'] = sock_dir
+
+        if salt.utils.is_windows() and not hasattr(self.opts, 'ipc_mode'):
+            self.opts['ipc_mode'] = 'tcp'
         self.puburi, self.pulluri = self.__load_uri(sock_dir, node)
         self.pending_tags = []
         self.pending_events = []
@@ -210,17 +221,13 @@ class SaltEvent(object):
         Return the string URI for the location of the pull and pub sockets to
         use for firing and listening to events
         '''
-        hash_type = getattr(hashlib, self.opts.get('hash_type', 'md5'))
-        # Only use the first 10 chars to keep longer hashes from exceeding the
-        # max socket path length.
-        id_hash = hash_type(salt.utils.to_bytes(self.opts.get('id', ''))).hexdigest()[:10]
         if node == 'master':
-            if self.opts.get('ipc_mode', '') == 'tcp':
+            if self.opts['ipc_mode'] == 'tcp':
                 puburi = 'tcp://127.0.0.1:{0}'.format(
-                    self.opts.get('tcp_master_pub_port', 4512)
+                    self.opts['tcp_master_pub_port']
                     )
                 pulluri = 'tcp://127.0.0.1:{0}'.format(
-                    self.opts.get('tcp_master_pull_port', 4513)
+                    self.opts['tcp_master_pull_port']
                     )
             else:
                 puburi = 'ipc://{0}'.format(os.path.join(
@@ -234,14 +241,18 @@ class SaltEvent(object):
                     ))
                 salt.utils.zeromq.check_ipc_path_max_len(pulluri)
         else:
-            if self.opts.get('ipc_mode', '') == 'tcp':
+            if self.opts['ipc_mode'] == 'tcp':
                 puburi = 'tcp://127.0.0.1:{0}'.format(
-                    self.opts.get('tcp_pub_port', 4510)
+                    self.opts['tcp_pub_port']
                     )
                 pulluri = 'tcp://127.0.0.1:{0}'.format(
-                    self.opts.get('tcp_pull_port', 4511)
+                    self.opts['tcp_pull_port']
                     )
             else:
+                hash_type = getattr(hashlib, self.opts['hash_type'])
+                # Only use the first 10 chars to keep longer hashes from exceeding the
+                # max socket path length.
+                id_hash = hash_type(salt.utils.to_bytes(self.opts['id'])).hexdigest()[:10]
                 puburi = 'ipc://{0}'.format(os.path.join(
                     sock_dir,
                     'minion_event_{0}_pub.ipc'.format(id_hash)
@@ -296,6 +307,11 @@ class SaltEvent(object):
         Establish the publish connection
         '''
         self.sub = self.context.socket(zmq.SUB)
+        try:
+            self.sub.setsockopt(zmq.HWM, self.opts['salt_event_pub_hwm'])
+        except AttributeError:
+            self.sub.setsockopt(zmq.SNDHWM, self.opts['salt_event_pub_hwm'])
+            self.sub.setsockopt(zmq.RCVHWM, self.opts['salt_event_pub_hwm'])
         self.sub.connect(self.puburi)
         self.poller.register(self.sub, zmq.POLLIN)
         self.sub.setsockopt_string(zmq.SUBSCRIBE, u'')
@@ -325,7 +341,7 @@ class SaltEvent(object):
 
     def _get_match_func(self, match_type=None):
         if match_type is None:
-            match_type = self.opts.get('event_match_type', 'startswith')
+            match_type = self.opts['event_match_type']
         return getattr(self, '_match_tag_{0}'.format(match_type), None)
 
     def _check_pending(self, tag, match_func=None):
@@ -438,7 +454,7 @@ class SaltEvent(object):
 
             log.trace('get_event() received = {0}'.format(ret))
             return ret
-        log.trace('_get_event() waited {0} seconds and received nothing'.format(wait * 1000))
+        log.trace('_get_event() waited {0} seconds and received nothing'.format(wait))
         return None
 
     def get_event(self,
@@ -567,7 +583,7 @@ class SaltEvent(object):
         tagend = TAGEND
         serialized_data = salt.utils.dicttrim.trim_dict(
             self.serial.dumps(data),
-            self.opts.get('max_event_size', 1048576),
+            self.opts['max_event_size'],
             is_msgpacked=True,
         )
         log.debug('Sending event - data = {0}'.format(data))
@@ -713,7 +729,7 @@ class MinionEvent(SaltEvent):
     '''
     def __init__(self, opts, listen=True):
         super(MinionEvent, self).__init__(
-            'minion', sock_dir=opts.get('sock_dir', None), opts=opts, listen=listen)
+            'minion', sock_dir=opts.get('sock_dir'), opts=opts, listen=listen)
 
 
 class AsyncEventPublisher(object):
@@ -723,16 +739,19 @@ class AsyncEventPublisher(object):
     TODO: remove references to "minion_event" whenever we need to use this for other things
     '''
     def __init__(self, opts, publish_handler, io_loop=None):
-        self.opts = opts
+        self.opts = salt.config.DEFAULT_MINION_OPTS.copy()
+        default_minion_sock_dir = self.opts['sock_dir']
+        self.opts.update(opts)
+
         self.publish_handler = publish_handler
 
         self.io_loop = io_loop or zmq.eventloop.ioloop.ZMQIOLoop()
         self.context = zmq.Context()
 
-        hash_type = getattr(hashlib, self.opts.get('hash_type', 'md5'))
+        hash_type = getattr(hashlib, self.opts['hash_type'])
         # Only use the first 10 chars to keep longer hashes from exceeding the
         # max socket path length.
-        id_hash = hash_type(salt.utils.to_bytes(self.opts.get('id', ''))).hexdigest()[:10]
+        id_hash = hash_type(salt.utils.to_bytes(self.opts['id'])).hexdigest()[:10]
         epub_sock_path = os.path.join(
             self.opts['sock_dir'],
             'minion_event_{0}_pub.ipc'.format(id_hash)
@@ -748,7 +767,7 @@ class AsyncEventPublisher(object):
 
         self.epub_sock = self.context.socket(zmq.PUB)
 
-        if self.opts.get('ipc_mode', '') == 'tcp':
+        if self.opts['ipc_mode'] == 'tcp':
             epub_uri = 'tcp://127.0.0.1:{0}'.format(
                 self.opts['tcp_pub_port']
             )
@@ -772,12 +791,7 @@ class AsyncEventPublisher(object):
             )
         )
 
-        # Check to make sure the sock_dir is available, create if not
-        default_minion_sock_dir = os.path.join(
-            salt.syspaths.SOCK_DIR,
-            'minion'
-        )
-        minion_sock_dir = self.opts.get('sock_dir', default_minion_sock_dir)
+        minion_sock_dir = self.opts['sock_dir']
 
         if not os.path.isdir(minion_sock_dir):
             # Let's try to create the directory defined on the configuration
@@ -803,7 +817,7 @@ class AsyncEventPublisher(object):
         self.epull_sock = self.context.socket(zmq.PULL)
 
         # Securely bind the event sockets
-        if self.opts.get('ipc_mode', '') != 'tcp':
+        if self.opts['ipc_mode'] != 'tcp':
             old_umask = os.umask(0o177)
         try:
             log.info('Starting pub socket on {0}'.format(epub_uri))
@@ -811,7 +825,7 @@ class AsyncEventPublisher(object):
             log.info('Starting pull socket on {0}'.format(epull_uri))
             self.epull_sock.bind(epull_uri)
         finally:
-            if self.opts.get('ipc_mode', '') != 'tcp':
+            if self.opts['ipc_mode'] != 'tcp':
                 os.umask(old_umask)
 
         self.stream = zmq.eventloop.zmqstream.ZMQStream(self.epull_sock, io_loop=self.io_loop)
@@ -852,14 +866,15 @@ class AsyncEventPublisher(object):
         self.destroy()
 
 
-class EventPublisher(multiprocessing.Process):
+class EventPublisher(salt.utils.process.MultiprocessingProcess):
     '''
     The interface that takes master events and republishes them out to anyone
     who wants to listen
     '''
     def __init__(self, opts):
         super(EventPublisher, self).__init__()
-        self.opts = opts
+        self.opts = salt.config.DEFAULT_MASTER_OPTS.copy()
+        self.opts.update(opts)
 
     def run(self):
         '''
@@ -871,14 +886,19 @@ class EventPublisher(multiprocessing.Process):
         self.context = zmq.Context(1)
         # Prepare the master event publisher
         self.epub_sock = self.context.socket(zmq.PUB)
+        try:
+            self.epub_sock.setsockopt(zmq.HWM, self.opts['event_publisher_pub_hwm'])
+        except AttributeError:
+            self.epub_sock.setsockopt(zmq.SNDHWM, self.opts['event_publisher_pub_hwm'])
+            self.epub_sock.setsockopt(zmq.RCVHWM, self.opts['event_publisher_pub_hwm'])
         # Prepare master event pull socket
         self.epull_sock = self.context.socket(zmq.PULL)
-        if self.opts.get('ipc_mode', '') == 'tcp':
+        if self.opts['ipc_mode'] == 'tcp':
             epub_uri = 'tcp://127.0.0.1:{0}'.format(
-                self.opts.get('tcp_master_pub_port', 4512)
+                self.opts['tcp_master_pub_port']
                 )
             epull_uri = 'tcp://127.0.0.1:{0}'.format(
-                self.opts.get('tcp_master_pull_port', 4513)
+                self.opts['tcp_master_pull_port']
                 )
         else:
             epub_uri = 'ipc://{0}'.format(
@@ -895,9 +915,18 @@ class EventPublisher(multiprocessing.Process):
         try:
             self.epull_sock.bind(epull_uri)
             self.epub_sock.bind(epub_uri)
-            if (self.opts.get('ipc_mode', '') != 'tcp' and (
-                    self.opts.get('client_acl') or
-                    self.opts.get('external_auth'))):
+            if self.opts['client_acl'] or self.opts['client_acl_blacklist']:
+                salt.utils.warn_until(
+                        'Nitrogen',
+                        'ACL rules should be configured with \'publisher_acl\' and '
+                        '\'publisher_acl_blacklist\' not \'client_acl\' and '
+                        '\'client_acl_blacklist\'. This functionality will be removed in Salt '
+                        'Nitrogen.'
+                        )
+            if (self.opts['ipc_mode'] != 'tcp' and (
+                    self.opts['publisher_acl'] or
+                    self.opts['client_acl'] or
+                    self.opts['external_auth'])):
                 os.chmod(os.path.join(
                     self.opts['sock_dir'], 'master_event_pub.ipc'), 0o666)
         finally:
@@ -924,7 +953,7 @@ class EventPublisher(multiprocessing.Process):
                 self.context.term()
 
 
-class EventReturn(multiprocessing.Process):
+class EventReturn(salt.utils.process.MultiprocessingProcess):
     '''
     A dedicated process which listens to the master event bus and queues
     and forwards events to the specified returner.
@@ -935,7 +964,7 @@ class EventReturn(multiprocessing.Process):
 
         Return an EventReturn instance
         '''
-        multiprocessing.Process.__init__(self)
+        salt.utils.process.MultiprocessingProcess.__init__(self)
 
         self.opts = opts
         self.event_return_queue = self.opts['event_return_queue']
@@ -946,7 +975,11 @@ class EventReturn(multiprocessing.Process):
         self.stop = False
 
     def sig_stop(self, signum, frame):
-        self.stop = True  # tell it to stop
+        # Flush and terminate
+        if self.event_queue:
+            self.flush_events()
+        self.stop = True
+        exit(salt.defaults.exitcodes.EX_GENERIC)
 
     def flush_events(self):
         event_return = '{0}.event_return'.format(
@@ -971,8 +1004,9 @@ class EventReturn(multiprocessing.Process):
         '''
         Spin up the multiprocess event returner
         '''
-        # Properly exit if a SIGTERM is signalled
+        # Properly exit if a SIGTERM/SIGINT is signalled
         signal.signal(signal.SIGTERM, self.sig_stop)
+        signal.signal(signal.SIGINT, self.sig_stop)
 
         salt.utils.appendproctitle(self.__class__.__name__)
         self.event = get_event('master', opts=self.opts, listen=True)
@@ -980,16 +1014,14 @@ class EventReturn(multiprocessing.Process):
         self.event.fire_event({}, 'salt/event_listen/start')
         try:
             for event in events:
+                if event['tag'] == 'salt/event/exit':
+                    self.stop = True
                 if self._filter(event):
                     self.event_queue.append(event)
                 if len(self.event_queue) >= self.event_return_queue:
                     self.flush_events()
                 if self.stop:
                     break
-        except KeyboardInterrupt:
-            if self.event_queue:
-                self.flush_events()
-            self.stop = True
         except zmq.error.ZMQError as exc:
             if exc.errno != errno.EINTR:  # Outside interrupt is a normal shutdown case
                 raise

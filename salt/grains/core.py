@@ -14,6 +14,7 @@ as those returned here
 from __future__ import absolute_import
 import itertools
 import os
+import json
 import socket
 import sys
 import re
@@ -750,6 +751,8 @@ def _virtual(osdata):
             )
             if product.startswith('VMware'):
                 grains['virtual'] = 'VMware'
+            if product.startswith('VirtualBox'):
+                grains['virtual'] = 'VirtualBox'
             if maker.startswith('Xen'):
                 grains['virtual_subtype'] = '{0} {1}'.format(maker, product)
                 grains['virtual'] = 'xen'
@@ -947,7 +950,8 @@ _OS_NAME_MAP = {
     'pidora': 'Fedora',
     'scientific': 'ScientificLinux',
     'synology': 'Synology',
-    'nilrt': 'NILinuxRT'
+    'nilrt': 'NILinuxRT',
+    'manjaro': 'Manjaro',
 }
 
 # Map the 'os' grain to the 'os_family' grain
@@ -995,7 +999,7 @@ _OS_FAMILY_MAP = {
     'Raspbian': 'Debian',
     'Devuan': 'Debian',
     'antiX': 'Debian',
-    'NILinuxRT': 'NILinuxRT'
+    'NILinuxRT': 'NILinuxRT',
 }
 
 
@@ -1172,7 +1176,7 @@ def os_data():
                             ] = match.groups()[1].rstrip()
             if 'lsb_distrib_id' not in grains:
                 if os.path.isfile('/etc/os-release'):
-                    # Arch ARM Linux
+                    # Arch ARM Linux - SUSE 12+ - openSUSE 13+
                     with salt.utils.fopen('/etc/os-release') as ifile:
                         # Imitate lsb-release
                         for line in ifile:
@@ -1193,6 +1197,10 @@ def os_data():
                                 name, value = match.groups()
                                 if name.lower() == 'name':
                                     grains['lsb_distrib_id'] = value.strip()
+                                elif name.lower() == 'version_id':
+                                    grains['lsb_distrib_release'] = value
+                                elif name.lower() == 'pretty_name':
+                                    grains['lsb_distrib_codename'] = value
                 elif os.path.isfile('/etc/SuSE-release'):
                     grains['lsb_distrib_id'] = 'SUSE'
                     with salt.utils.fopen('/etc/SuSE-release') as fhr:
@@ -1289,6 +1297,8 @@ def os_data():
             uname_v = __salt__['cmd.run']('uname -v')
             grains['os'] = grains['osfullname'] = 'SmartOS'
             grains['osrelease'] = uname_v[uname_v.index('_')+1:]
+        if salt.utils.is_smartos_globalzone():
+            grains.update(_smartos_computenode_data())
         elif os.path.isfile('/etc/release'):
             with salt.utils.fopen('/etc/release', 'r') as fp_:
                 rel_data = fp_.read()
@@ -1417,7 +1427,7 @@ def locale_info():
     grains = {}
     grains['locale_info'] = {}
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return grains
 
     try:
@@ -1446,7 +1456,7 @@ def hostname():
     #   domain
     grains = {}
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return grains
 
     grains['localhost'] = socket.gethostname()
@@ -1462,7 +1472,7 @@ def append_domain():
 
     grain = {}
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return grain
 
     if 'append_domain' in __opts__:
@@ -1475,7 +1485,7 @@ def ip4():
     Return a list of ipv4 addrs
     '''
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     return {'ipv4': salt.utils.network.ip_addrs(include_loopback=True)}
@@ -1486,7 +1496,7 @@ def fqdn_ip4():
     Return a list of ipv4 addrs of fqdn
     '''
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     try:
@@ -1502,7 +1512,7 @@ def ip6():
     Return a list of ipv6 addrs
     '''
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     return {'ipv6': salt.utils.network.ip_addrs6(include_loopback=True)}
@@ -1513,7 +1523,7 @@ def fqdn_ip6():
     Return a list of ipv6 addrs of fqdn
     '''
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     try:
@@ -1527,11 +1537,12 @@ def fqdn_ip6():
 def ip_interfaces():
     '''
     Provide a dict of the connected interfaces and their ip addresses
+    The addresses will be passed as a list for each interface
     '''
     # Provides:
     #   ip_interfaces
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     ret = {}
@@ -1554,11 +1565,12 @@ def ip_interfaces():
 def ip4_interfaces():
     '''
     Provide a dict of the connected interfaces and their ip4 addresses
+    The addresses will be passed as a list for each interface
     '''
     # Provides:
     #   ip_interfaces
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     ret = {}
@@ -1578,11 +1590,12 @@ def ip4_interfaces():
 def ip6_interfaces():
     '''
     Provide a dict of the connected interfaces and their ip6 addresses
+    The addresses will be passed as a list for each interface
     '''
     # Provides:
     #   ip_interfaces
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     ret = {}
@@ -1776,7 +1789,7 @@ def _hw_data(osdata):
     .. versionadded:: 0.9.5
     '''
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     grains = {}
@@ -1852,6 +1865,43 @@ def _hw_data(osdata):
     return grains
 
 
+def _smartos_computenode_data():
+    '''
+    Return useful information from a SmartOS compute node
+    '''
+    # Provides:
+    #   vms_total
+    #   vms_running
+    #   vms_stopped
+    #   sdc_version
+    #   vm_capable
+    #   vm_hw_virt
+
+    if salt.utils.is_proxy():
+        return {}
+
+    grains = {}
+
+    # *_vms grains
+    grains['computenode_vms_total'] = len(__salt__['cmd.run']('vmadm list -p').split("\n"))
+    grains['computenode_vms_running'] = len(__salt__['cmd.run']('vmadm list -p state=running').split("\n"))
+    grains['computenode_vms_stopped'] = len(__salt__['cmd.run']('vmadm list -p state=stopped').split("\n"))
+
+    # sysinfo derived grains
+    sysinfo = json.loads(__salt__['cmd.run']('sysinfo'))
+    grains['computenode_sdc_version'] = sysinfo['SDC Version']
+    grains['computenode_vm_capable'] = sysinfo['VM Capable']
+    if sysinfo['VM Capable']:
+        grains['computenode_vm_hw_virt'] = sysinfo['CPU Virtualization']
+
+    # sysinfo derived smbios grains
+    grains['manufacturer'] = sysinfo['Manufacturer']
+    grains['productname'] = sysinfo['Product']
+    grains['uuid'] = sysinfo['UUID']
+
+    return grains
+
+
 def _smartos_zone_data():
     '''
     Return useful information from a SmartOS zone
@@ -1865,7 +1915,7 @@ def _smartos_zone_data():
     #   hypervisor_uuid
     #   datacenter
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
 
     grains = {}
@@ -1917,7 +1967,7 @@ def get_server_id():
     # Provides:
     #   server_id
 
-    if 'proxyminion' in __opts__:
+    if salt.utils.is_proxy():
         return {}
     return {'server_id': abs(hash(__opts__.get('id', '')) % (2 ** 31))}
 

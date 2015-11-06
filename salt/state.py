@@ -33,7 +33,7 @@ import salt.fileclient
 import salt.utils.event
 import salt.utils.url
 import salt.syspaths as syspaths
-from salt.utils import context, immutabletypes
+from salt.utils import immutabletypes
 from salt.template import compile_template, compile_template_str
 from salt.exceptions import (
     SaltException,
@@ -48,7 +48,7 @@ import salt.utils.yamlloader as yamlloader
 # Import third party libs
 # pylint: disable=import-error,no-name-in-module,redefined-builtin
 import salt.ext.six as six
-from salt.ext.six.moves import range
+from salt.ext.six.moves import map, range
 # pylint: enable=import-error,no-name-in-module,redefined-builtin
 
 log = logging.getLogger(__name__)
@@ -549,7 +549,7 @@ class Compiler(object):
                         if isinstance(entry, dict):
                             low_name = next(six.iterkeys(entry))
                             live['name'] = low_name
-                            live.update(entry[low_name][0])
+                            list(map(live.update, entry[low_name]))
                         else:
                             live['name'] = entry
                         live['name_order'] = name_order
@@ -606,10 +606,11 @@ class State(object):
     '''
     Class used to execute salt states
     '''
-    def __init__(self, opts, pillar=None, jid=None, pillar_enc=None):
+    def __init__(self, opts, pillar=None, jid=None, pillar_enc=None, proxy=None):
         if 'grains' not in opts:
             opts['grains'] = salt.loader.grains(opts)
         self.opts = opts
+        self.proxy = proxy
         self._pillar_override = pillar
         if pillar_enc is not None:
             try:
@@ -624,7 +625,7 @@ class State(object):
         self._pillar_enc = pillar_enc
         self.opts['pillar'] = self._gather_pillar()
         self.state_con = {}
-        self.load_modules()
+        self.load_modules(proxy=proxy)
         self.active = set()
         self.mod_init = set()
         self.pre = {}
@@ -792,13 +793,15 @@ class State(object):
         '''
         self.__run_num = 0
 
-    def load_modules(self, data=None):
+    def load_modules(self, data=None, proxy=None):
         '''
         Load the modules into the state
         '''
         log.info('Loading fresh modules for state activity')
         self.utils = salt.loader.utils(self.opts)
-        self.functions = salt.loader.minion_mods(self.opts, self.state_con, utils=self.utils)
+        self.functions = salt.loader.minion_mods(self.opts, self.state_con,
+                                                 utils=self.utils,
+                                                 proxy=proxy)
         if isinstance(data, dict):
             if data.get('provider', False):
                 if isinstance(data['provider'], str):
@@ -835,7 +838,7 @@ class State(object):
                 reload(site)
             except RuntimeError:
                 log.error('Error encountered during module reload. Modules were not reloaded.')
-        self.load_modules()
+        self.load_modules(proxy=self.proxy)
         if not self.opts.get('local', False) and self.opts.get('multiprocessing', True):
             self.functions['saltutil.refresh_modules']()
 
@@ -1225,7 +1228,7 @@ class State(object):
                         if isinstance(entry, dict):
                             low_name = next(six.iterkeys(entry))
                             live['name'] = low_name
-                            live.update(entry[low_name][0])
+                            list(map(live.update, entry[low_name]))
                         else:
                             live['name'] = entry
                         live['name_order'] = name_order
@@ -1600,7 +1603,6 @@ class State(object):
             initial_ret={'full': state_func_name},
             expected_extra_kws=STATE_INTERNAL_KEYWORDS
         )
-
         inject_globals = {
             # Pass a copy of the running dictionary, the low state chunks and
             # the current state dictionaries.
@@ -1649,10 +1651,10 @@ class State(object):
                 inject_globals['__env__'] = 'base'
 
             if 'result' not in ret or ret['result'] is False:
-                with context.func_globals_inject(self.states[cdata['full']],
-                                                 **inject_globals):
-                    ret = self.states[cdata['full']](*cdata['args'],
-                                                     **cdata['kwargs'])
+                self.states.inject_globals = inject_globals
+                ret = self.states[cdata['full']](*cdata['args'],
+                                                 **cdata['kwargs'])
+                self.states.inject_globals = {}
             if 'check_cmd' in low and '{0[state]}.mod_run_check_cmd'.format(low) not in self.states:
                 ret.update(self._run_check_cmd(low))
             self.verify_ret(ret)
@@ -2159,8 +2161,7 @@ class State(object):
         # Check for any disabled states
         disabled = {}
         if 'state_runs_disabled' in self.opts['grains']:
-            _chunks = copy.deepcopy(chunks)
-            for low in _chunks:
+            for low in chunks[:]:
                 state_ = '{0}.{1}'.format(low['state'], low['fun'])
                 for pat in self.opts['grains']['state_runs_disabled']:
                     if fnmatch.fnmatch(state_, pat):
@@ -2606,7 +2607,11 @@ class BaseHighState(object):
         '''
         Returns the high data derived from the top file
         '''
-        tops = self.get_tops()
+        try:
+            tops = self.get_tops()
+        except SaltRenderError as err:
+            log.error('Unable to render top file: ' + str(err.error))
+            return {}
         return self.merge_tops(tops)
 
     def top_matches(self, top):
@@ -3122,7 +3127,7 @@ class BaseHighState(object):
             top = self.get_top()
         except SaltRenderError as err:
             ret[tag_name]['comment'] = 'Unable to render top file: '
-            ret[tag_name]['comment'] += err.error
+            ret[tag_name]['comment'] += str(err.error)
             return ret
         except Exception:
             trb = traceback.format_exc()
@@ -3131,7 +3136,7 @@ class BaseHighState(object):
         err += self.verify_tops(top)
         matches = self.top_matches(top)
         if not matches:
-            msg = ('No Top file or external nodes data matches found')
+            msg = 'No Top file or external nodes data matches found.'
             ret[tag_name]['comment'] = msg
             return ret
         matches = self.matches_whitelist(matches, whitelist)
@@ -3224,11 +3229,11 @@ class HighState(BaseHighState):
     # a stack of active HighState objects during a state.highstate run
     stack = []
 
-    def __init__(self, opts, pillar=None, jid=None, pillar_enc=None):
+    def __init__(self, opts, pillar=None, jid=None, pillar_enc=None, proxy=None):
         self.opts = opts
         self.client = salt.fileclient.get_file_client(self.opts)
         BaseHighState.__init__(self, opts)
-        self.state = State(self.opts, pillar, jid, pillar_enc)
+        self.state = State(self.opts, pillar, jid, pillar_enc, proxy=proxy)
         self.matcher = salt.minion.Matcher(self.opts)
 
         # tracks all pydsl state declarations globally across sls files
@@ -3268,7 +3273,7 @@ class MasterState(State):
     def __init__(self, opts, minion):
         State.__init__(self, opts)
 
-    def load_modules(self, data=None):
+    def load_modules(self, data=None, proxy=None):
         '''
         Load the modules into the state
         '''

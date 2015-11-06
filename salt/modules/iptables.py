@@ -80,8 +80,13 @@ def _conf(family='ipv4'):
             return '/var/lib/ip6tables/rules-save'
         else:
             return '/var/lib/iptables/rules-save'
+    elif __grains__['os_family'] == 'Suse':
+        # SuSE does not seem to use separate files for IPv4 and IPv6
+        return '/etc/sysconfig/scripts/SuSEfirewall2-custom'
     else:
-        return False
+        raise SaltException('Saving iptables to file is not' +
+                            ' supported on {0}.'.format(__grains__['os']) +
+                            ' Please file an issue with SaltStack')
 
 
 def version(family='ipv4'):
@@ -256,6 +261,9 @@ def build_rule(table='filter', chain=None, command=None, position='', full=None,
             del kwargs[multiport_arg]
 
     if 'comment' in kwargs:
+        if '-m comment' not in rule:
+            rule.append('-m comment')
+
         rule.append('--comment "{0}"'.format(kwargs['comment']))
         del kwargs['comment']
 
@@ -1229,7 +1237,7 @@ def _parser():
     ## sctp
     add_arg('--chunk-types', dest='chunk-types', action='append')
     ## set
-    add_arg('--match-set', dest='match-set', action='append', nargs=2)
+    add_arg('--match-set', dest='match-set', action='append')
     add_arg('--return-nomatch', dest='return-nomatch', action='append')
     add_arg('--update-counters', dest='update-counters', action='append')
     add_arg('--update-subcounters', dest='update-subcounters', action='append')

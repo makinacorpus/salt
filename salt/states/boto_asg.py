@@ -434,8 +434,8 @@ def present(
             if sg_index:
                 log.debug('security group associations found in launch config')
                 _group_ids = __salt__['boto_secgroup.convert_to_group_ids'](
-                    launch_config[sg_index]['security_groups'], vpc_id, region,
-                    key, keyid, profile
+                    launch_config[sg_index]['security_groups'], vpc_id=vpc_id,
+                    region=region, key=key, keyid=keyid, profile=profile
                 )
                 launch_config[sg_index]['security_groups'] = _group_ids
 
@@ -618,10 +618,10 @@ def present(
         name, min_size == max_size, alarms, alarms_from_pillar, region, key,
         keyid, profile
     )
-    if _ret['changes'] != {}:
-        ret['result'] = _ret['result']
-        ret['changes'] = dictupdate.update(ret['changes'], _ret['changes'])
+    ret['changes'] = dictupdate.update(ret['changes'], _ret['changes'])
     ret['comment'] = ' '.join([ret['comment'], _ret['comment']])
+    if not _ret['result']:
+        ret['result'] = _ret['result']
     return ret
 
 

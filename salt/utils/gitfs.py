@@ -124,7 +124,6 @@ class GitProvider(object):
         self.env_whitelist = self.opts.get(
             '{0}_env_whitelist'.format(self.role), [])
         repo_conf = copy.deepcopy(per_remote_defaults)
-        bad_per_remote_conf = False
 
         per_remote_collisions = [x for x in override_params
                                  if x in PER_REMOTE_ONLY]
@@ -189,7 +188,7 @@ class GitProvider(object):
                         )
                     log.critical(msg)
                 else:
-                    log.critical(
+                    msg = (
                         'Invalid {0} configuration parameter \'{1}\' in '
                         'remote {2}. Valid parameters are: {3}.'.format(
                             self.role,
@@ -203,6 +202,7 @@ class GitProvider(object):
                             ' See the GitFS Walkthrough in the Salt '
                             'documentation for further information.'
                         )
+                    log.critical(msg)
 
                 per_remote_errors = True
             if per_remote_errors:
@@ -1685,7 +1685,7 @@ class GitBase(object):
                     'Update lockfile is present for {0} remote \'{1}\', '
                     'skipping. If this warning persists, it is possible that '
                     'the update process was interrupted. Removing {2} or '
-                    'running \'salt-run fileserver.clear_lock {0}\' will '
+                    'running \'salt-run cache.clear_git_lock {0}\' will '
                     'allow updates to continue for this remote.'
                     .format(self.role, repo.id, repo.lockfile)
                 )
