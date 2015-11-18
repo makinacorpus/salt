@@ -3477,6 +3477,8 @@ def bootstrap(name,
     wait_started(name, path=path, uses_systemd=uses_systemd)
     if bootstrap_delay is not None:
         try:
+            log.info('LXC {0}: bootstrap_delay: {1}'.format(
+                name, bootstrap_delay))
             time.sleep(bootstrap_delay)
         except TypeError:
             # Bad input, but assume since a value was passed that
