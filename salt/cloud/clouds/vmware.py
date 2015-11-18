@@ -333,7 +333,8 @@ def _add_new_network_adapter_helper(network_adapter_label, network_name, adapter
         if not switch_type:
             err_msg = "The switch type to be used by '{0}' has not been specified".format(network_adapter_label)
         else:
-            err_msg = "Cannot create '{0}'. Invalid/unsupported switch type '{1}'".format(network_adapter_label, switch_type)
+            err_msg = "Cannot create '{0}'. Invalid/unsupported switch type '{1}'".format(network_adapter_label,
+                                                                                          switch_type)
         raise SaltCloudSystemExit(err_msg)
 
     network_spec.device.key = random_key
@@ -1150,15 +1151,7 @@ def list_datacenters(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    datacenters = []
-    datacenter_properties = ["name"]
-
-    datacenter_list = salt.utils.vmware.get_mors_with_properties(_get_si(), vim.Datacenter, datacenter_properties)
-
-    for datacenter in datacenter_list:
-        datacenters.append(datacenter["name"])
-
-    return {'Datacenters': datacenters}
+    return {'Datacenters': salt.utils.vmware.list_datacenters(_get_si())}
 
 
 def list_clusters(kwargs=None, call=None):
@@ -1177,17 +1170,7 @@ def list_clusters(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    clusters = []
-    cluster_properties = ["name"]
-
-    cluster_list = salt.utils.vmware.get_mors_with_properties(_get_si(),
-                                                              vim.ClusterComputeResource,
-                                                              cluster_properties)
-
-    for cluster in cluster_list:
-        clusters.append(cluster["name"])
-
-    return {'Clusters': clusters}
+    return {'Clusters': salt.utils.vmware.list_clusters(_get_si())}
 
 
 def list_datastore_clusters(kwargs=None, call=None):
@@ -1206,17 +1189,7 @@ def list_datastore_clusters(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    datastore_clusters = []
-    datastore_cluster_properties = ["name"]
-
-    datastore_cluster_list = salt.utils.vmware.get_mors_with_properties(_get_si(),
-                                                                        vim.StoragePod,
-                                                                        datastore_cluster_properties)
-
-    for datastore_cluster in datastore_cluster_list:
-        datastore_clusters.append(datastore_cluster["name"])
-
-    return {'Datastore Clusters': datastore_clusters}
+    return {'Datastore Clusters': salt.utils.vmware.list_datastore_clusters(_get_si())}
 
 
 def list_datastores(kwargs=None, call=None):
@@ -1235,17 +1208,7 @@ def list_datastores(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    datastores = []
-    datastore_properties = ["name"]
-
-    datastore_list = salt.utils.vmware.get_mors_with_properties(_get_si(),
-                                                                vim.Datastore,
-                                                                datastore_properties)
-
-    for datastore in datastore_list:
-        datastores.append(datastore["name"])
-
-    return {'Datastores': datastores}
+    return {'Datastores': salt.utils.vmware.list_datastores(_get_si())}
 
 
 def list_hosts(kwargs=None, call=None):
@@ -1264,17 +1227,7 @@ def list_hosts(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    hosts = []
-    host_properties = ["name"]
-
-    host_list = salt.utils.vmware.get_mors_with_properties(_get_si(),
-                                                           vim.HostSystem,
-                                                           host_properties)
-
-    for host in host_list:
-        hosts.append(host["name"])
-
-    return {'Hosts': hosts}
+    return {'Hosts': salt.utils.vmware.list_hosts(_get_si())}
 
 
 def list_resourcepools(kwargs=None, call=None):
@@ -1293,17 +1246,7 @@ def list_resourcepools(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    resource_pools = []
-    resource_pool_properties = ["name"]
-
-    resource_pool_list = salt.utils.vmware.get_mors_with_properties(_get_si(),
-                                                                    vim.ResourcePool,
-                                                                    resource_pool_properties)
-
-    for resource_pool in resource_pool_list:
-        resource_pools.append(resource_pool["name"])
-
-    return {'Resource Pools': resource_pools}
+    return {'Resource Pools': salt.utils.vmware.list_resourcepools(_get_si())}
 
 
 def list_networks(kwargs=None, call=None):
@@ -1322,15 +1265,7 @@ def list_networks(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    networks = []
-    network_properties = ["name"]
-
-    network_list = salt.utils.vmware.get_mors_with_properties(_get_si(), vim.Network, network_properties)
-
-    for network in network_list:
-        networks.append(network["name"])
-
-    return {'Networks': networks}
+    return {'Networks': salt.utils.vmware.list_networks(_get_si())}
 
 
 def list_nodes_min(kwargs=None, call=None):
@@ -1716,15 +1651,7 @@ def list_folders(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    folders = []
-    folder_properties = ["name"]
-
-    folder_list = salt.utils.vmware.get_mors_with_properties(_get_si(), vim.Folder, folder_properties)
-
-    for folder in folder_list:
-        folders.append(folder["name"])
-
-    return {'Folders': folders}
+    return {'Folders': salt.utils.vmware.list_folders(_get_si())}
 
 
 def list_snapshots(kwargs=None, call=None):
@@ -2187,6 +2114,9 @@ def create(vm_):
     guest_id = config.get_cloud_config_value(
         'image', vm_, __opts__, search_global=False, default=None
     )
+    customization = config.get_cloud_config_value(
+        'customization', vm_, __opts__, search_global=False, default=True
+    )
 
     if 'clonefrom' in vm_:
         # Clone VM/template from specified VM/template
@@ -2304,7 +2234,7 @@ def create(vm_):
             scheduled_hardware_upgrade.versionKey = hardware_version
             config_spec.scheduledHardwareUpgradeInfo = scheduled_hardware_upgrade
         else:
-            log.debug("Virtual hardware version already set to {1}".format(hardware_version))
+            log.debug("Virtual hardware version already set to {0}".format(hardware_version))
 
     if num_cpus:
         log.debug("Setting cpu to: {0}".format(num_cpus))
@@ -2343,7 +2273,7 @@ def create(vm_):
             config=config_spec
         )
 
-        if devices and 'network' in list(devices.keys()) and 'Windows' not in object_ref.config.guestFullName:
+        if customization and (devices and 'network' in list(devices.keys())) and 'Windows' not in object_ref.config.guestFullName:
             global_ip = vim.vm.customization.GlobalIPSettings()
 
             if 'dns_servers' in list(vm_.keys()):
@@ -2942,15 +2872,7 @@ def list_dvs(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    distributed_vswitches = []
-    dvs_properties = ["name"]
-
-    dvs_list = salt.utils.vmware.get_mors_with_properties(_get_si(), vim.DistributedVirtualSwitch, dvs_properties)
-
-    for dvs in dvs_list:
-        distributed_vswitches.append(dvs["name"])
-
-    return {'Distributed Virtual Switches': distributed_vswitches}
+    return {'Distributed Virtual Switches': salt.utils.vmware.list_dvs(_get_si())}
 
 
 def list_vapps(kwargs=None, call=None):
@@ -2969,15 +2891,7 @@ def list_vapps(kwargs=None, call=None):
             '-f or --function.'
         )
 
-    vapps = []
-    vapp_properties = ["name"]
-
-    vapp_list = salt.utils.vmware.get_mors_with_properties(_get_si(), vim.VirtualApp, vapp_properties)
-
-    for vapp in vapp_list:
-        vapps.append(vapp["name"])
-
-    return {'vApps': vapps}
+    return {'vApps': salt.utils.vmware.list_vapps(_get_si())}
 
 
 def enter_maintenance_mode(kwargs=None, call=None):

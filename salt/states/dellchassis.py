@@ -4,7 +4,7 @@ Manage chassis via Salt Proxies.
 
 .. versionadded:: 2015.8.2
 
-Below is an example state that sets parameters just to show the basics.
+Below is an example state that sets basic parameters:
 
 .. code-block:: yaml
 
@@ -24,15 +24,16 @@ Below is an example state that sets parameters just to show the basics.
           - server-3: powercycle
 
 However, it is possible to place the entire set of chassis configuration
-data in pillar. Here's an example pillar
-structure:
+data in pillar. Here's an example pillar structure:
 
 .. code-block:: yaml
 
     proxy:
       host: 10.27.20.18
       admin_username: root
-      admin_password: saltstack
+      admin_password: super-secret
+      fallback_admin_username: root
+      fallback_admin_password: old-secret
       proxytype: fx2
 
       chassis:
@@ -48,30 +49,30 @@ structure:
           - 'server-2': blade2
 
         blades:
-           blade1:
-             idrac_password: saltstack1
-             ipmi_over_lan: True
-             ip: 172.17.17.1
-             subnet: 255.255.0.0
-             netmask: 172.17.255.255
+          blade1:
+            idrac_password: saltstack1
+            ipmi_over_lan: True
+            ip: 172.17.17.1
+            subnet: 255.255.0.0
+            netmask: 172.17.255.255
           blade2:
-             idrac_password: saltstack1
-             ipmi_over_lan: True
-             ip: 172.17.17.2
-             subnet: 255.255.0.0
-             netmask: 172.17.255.255
+            idrac_password: saltstack1
+            ipmi_over_lan: True
+            ip: 172.17.17.2
+            subnet: 255.255.0.0
+            netmask: 172.17.255.255
           blade3:
-             idrac_password: saltstack1
-             ipmi_over_lan: True
-             ip: 172.17.17.2
-             subnet: 255.255.0.0
-             netmask: 172.17.255.255
+            idrac_password: saltstack1
+            ipmi_over_lan: True
+            ip: 172.17.17.2
+            subnet: 255.255.0.0
+            netmask: 172.17.255.255
           blade4:
-             idrac_password: saltstack1
-             ipmi_over_lan: True
-             ip: 172.17.17.2
-             subnet: 255.255.0.0
-             netmask: 172.17.255.255
+            idrac_password: saltstack1
+            ipmi_over_lan: True
+            ip: 172.17.17.2
+            subnet: 255.255.0.0
+            netmask: 172.17.255.255
 
         switches:
           switch-1:
@@ -87,26 +88,26 @@ structure:
             snmp: nonpublic
             password: saltstack1
 
-And to go with it, here's an example state that pulls the data from pillar
+And to go with it, here's an example state that pulls the data from the
+pillar stated above:
 
 .. code-block:: yaml
 
-    {% set details = pillar['chassis'] with context %}
+    {% set details = pillar.get('proxy:chassis', {}) %}
     standup-step1:
       dellchassis.chassis:
         - name: {{ details['name'] }}
         - location: {{ details['location'] }}
         - mode: {{ details['management_mode'] }}
         - idrac_launch: {{ details['idrac_launch'] }}
-        - slot_names
-          {% for k, v in details['chassis']['slot_names'].iteritems() %}
+        - slot_names:
+          {% for k, v in details['slot_names'].iteritems() %}
           - {{ k }}: {{ v }}
           {% endfor %}
 
-
-    {% for k, v in details['chassis']['switches'].iteritems() %}
+    {% for k, v in details['switches'].iteritems() %}
     standup-switches-{{ k }}:
-      dellchassis.dell_switch:
+      dellchassis.switch:
         - name: {{ k }}
         - ip: {{ v['ip'] }}
         - netmask: {{ v['netmask'] }}
@@ -115,14 +116,8 @@ And to go with it, here's an example state that pulls the data from pillar
         - snmp: {{ v['snmp'] }}
     {% endfor %}
 
-    dellchassis
-    {% for k, v in details['chassis']['slot_names'].iteritems() %}
-
-          - {{ k }}: {{ v }}
-          {% endfor %}
-
     blade_powercycle:
-      chassis.dell_chassis:
+      dellchassis.chassis:
         - blade_power_states:
           - server-1: powercycle
           - server-2: powercycle
@@ -134,15 +129,18 @@ And to go with it, here's an example state that pulls the data from pillar
 # Import python libs
 from __future__ import absolute_import
 import logging
+import os
 
 log = logging.getLogger(__name__)
+
+from salt.exceptions import CommandExecutionError
 
 
 def __virtual__():
     return 'chassis.cmd' in __salt__
 
 
-def blade_idrac(idrac_password=None, idrac_ipmi=None,
+def blade_idrac(name, idrac_password=None, idrac_ipmi=None,
                 idrac_ip=None, idrac_netmask=None, idrac_gateway=None,
                 idrac_dnsname=None,
                 drac_dhcp=None):
@@ -159,7 +157,8 @@ def blade_idrac(idrac_password=None, idrac_ipmi=None,
     :return: A standard Salt changes dictionary
     '''
 
-    ret = {'result': True,
+    ret = {'name': name,
+           'result': True,
            'changes': {},
            'comment': ''}
 
@@ -255,7 +254,7 @@ def chassis(name, chassis_name=None, password=None, datacenter=None,
               - server-2: off
               - server-3: powercycle
     '''
-    ret = {'chassis_name': chassis_name,
+    ret = {'name': chassis_name,
            'result': True,
            'changes': {},
            'comment': ''}
@@ -450,7 +449,7 @@ def switch(name, ip=None, netmask=None, gateway=None, dhcp=None,
     .. code-block:: yaml
 
         my-dell-chassis:
-          dellchassis.dell_switch:
+          dellchassis.switch:
             - switch: switch-1
             - ip: 192.168.1.1
             - netmask: 255.255.255.0
@@ -527,4 +526,71 @@ def switch(name, ip=None, netmask=None, gateway=None, dhcp=None,
         ret['comment'] = 'There was an error setting the switch {0}.'.format(name)
 
     ret['comment'] = 'Dell chassis switch {0} was updated.'.format(name)
+    return ret
+
+
+def _firmware_update(firmwarefile='', host='',
+                     directory=''):
+    '''
+    Update firmware for a single host
+    '''
+    dest = os.path.join(directory, firmwarefile[7:])
+
+    __salt__['cp.get_file'](firmwarefile, dest)
+
+    username = __pillar__['proxy']['admin_user']
+    password = __pillar__['proxy']['admin_password']
+    __salt__['dracr.update_firmware'](dest,
+                                      host=host,
+                                      admin_username=username,
+                                      admin_password=password)
+
+
+def firmware_update(hosts=None, directory=''):
+    '''
+        State to update the firmware on host
+        using the ``racadm`` command
+
+        firmwarefile
+            filename (string) starting with ``salt://``
+        host
+            string representing the hostname
+            supplied to the ``racadm`` command
+        directory
+            Directory name where firmwarefile
+            will be downloaded
+
+    .. code-block:: yaml
+
+        dell-chassis-firmware-update:
+          dellchassis.firmware_update:
+            hosts:
+              cmc:
+                salt://firmware_cmc.exe
+              server-1:
+                salt://firmware.exe
+            directory: /opt/firmwares
+    '''
+    ret = {}
+    ret.changes = {}
+    success = True
+    for host, firmwarefile in hosts:
+        try:
+            _firmware_update(firmwarefile, host, directory)
+            ret['changes'].update({
+                'host': {
+                    'comment': 'Firmware update submitted for {0}'.format(host),
+                    'success': True,
+                }
+            })
+        except CommandExecutionError as err:
+            success = False
+            ret['changes'].update({
+                'host': {
+                    'comment': 'FAILED to update firmware for {0}'.format(host),
+                    'success': False,
+                    'reason': str(err),
+                }
+            })
+    ret['result'] = success
     return ret

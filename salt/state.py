@@ -42,6 +42,7 @@ from salt.exceptions import (
     SaltReqTimeoutError
 )
 from salt.utils.odict import OrderedDict, DefaultOrderedDict
+from salt.utils.locales import sdecode
 # Explicit late import to avoid circular import. DO NOT MOVE THIS.
 import salt.utils.yamlloader as yamlloader
 
@@ -270,16 +271,6 @@ class Compiler(object):
         self.opts = opts
         self.rend = renderers
 
-    # We need __setstate__ and __getstate__ to avoid pickling errors since
-    # 'self.rend' contains a function reference which is not picklable.
-    # These methods are only used when pickling so will not be used on
-    # non-Windows platforms.
-    def __setstate__(self, state):
-        self.__init__(state['opts'])
-
-    def __getstate__(self):
-        return {'opts': self.opts}
-
     def render_template(self, template, **kwargs):
         '''
         Enforce the states in a template
@@ -507,6 +498,7 @@ class Compiler(object):
                 chunk['order'] = chunk['order'] + chunk.pop('name_order') / 10000.0
             if chunk['order'] < 0:
                 chunk['order'] = cap + 1000000 + chunk['order']
+            chunk['name'] = sdecode(chunk['name'])
         chunks.sort(key=lambda chunk: (chunk['order'], '{0[state]}{0[name]}{0[fun]}'.format(chunk)))
         return chunks
 
@@ -705,7 +697,7 @@ class State(object):
         Execute the aggregation systems to runtime modify the low chunk
         '''
         agg_opt = self.functions['config.option']('state_aggregate')
-        if low.get('aggregate') is True:
+        if 'aggregate' in low:
             agg_opt = low['aggregate']
         if agg_opt is True:
             agg_opt = [low['state']]
@@ -822,7 +814,8 @@ class State(object):
                                         func[func.rindex('.'):]
                                         )
                                 self.functions[f_key] = funcs[func]
-        self.states = salt.loader.states(self.opts, self.functions, self.utils)
+        self.serializers = salt.loader.serializers(self.opts)
+        self.states = salt.loader.states(self.opts, self.functions, self.utils, self.serializers)
         self.rend = salt.loader.render(self.opts, self.functions, states=self.states)
 
     def module_refresh(self):
@@ -3288,7 +3281,8 @@ class MasterState(State):
         # Load the states, but they should not be used in this class apart
         # from inspection
         self.utils = salt.loader.utils(self.opts)
-        self.states = salt.loader.states(self.opts, self.functions, self.utils)
+        self.serializers = salt.loader.serializers(self.opts)
+        self.states = salt.loader.states(self.opts, self.functions, self.utils, self.serializers)
         self.rend = salt.loader.render(self.opts, self.functions, states=self.states)
 
 

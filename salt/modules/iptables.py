@@ -9,7 +9,6 @@ import os
 import re
 import sys
 import uuid
-import shlex
 import string
 
 # Import salt libs
@@ -481,7 +480,7 @@ def get_saved_rules(conf_file=None, family='ipv4'):
         IPv6:
         salt '*' iptables.get_saved_rules family=ipv6
     '''
-    return _parse_conf(conf_file, family)
+    return _parse_conf(conf_file=conf_file, family=family)
 
 
 def get_rules(family='ipv4'):
@@ -932,7 +931,7 @@ def _parse_conf(conf_file=None, in_mem=False, family='ipv4'):
             ret[table][chain]['rules'] = []
             ret[table][chain]['rules_comment'] = {}
         elif line.startswith('-A'):
-            args = shlex.split(line)
+            args = salt.utils.shlex_split(line)
             index = 0
             while index + 1 < len(args):
                 swap = args[index] == '!' and args[index + 1].startswith('-')
