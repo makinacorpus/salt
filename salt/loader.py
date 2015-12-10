@@ -493,7 +493,7 @@ def search(opts, returners, whitelist=None):
     )
 
 
-def log_handlers(opts):
+def log_handlers(opts, functions=None, grains=None):
     '''
     Returns the custom logging handler modules
 
@@ -509,6 +509,7 @@ def log_handlers(opts):
         ),
         opts,
         tag='log_handlers',
+        pack={'__salt__': functions, '__grains__': grains}
     )
     return FilterDictWrapper(ret, '.setup_handlers')
 
@@ -630,6 +631,7 @@ def grains(opts, force_refresh=False, proxy=None):
 
     if opts.get('skip_grains', False):
         return {}
+    grains_deep_merge = opts.get('grains_deep_merge', False) is True
     if 'conf_file' in opts:
         pre_opts = {}
         pre_opts.update(salt.config.load_config(
@@ -665,7 +667,10 @@ def grains(opts, force_refresh=False, proxy=None):
         ret = fun()
         if not isinstance(ret, dict):
             continue
-        grains_data.update(ret)
+        if grains_deep_merge:
+            salt.utils.dictupdate.update(grains_data, ret)
+        else:
+            grains_data.update(ret)
 
     # Run the rest of the grains
     for key, fun in six.iteritems(funcs):
@@ -684,7 +689,10 @@ def grains(opts, force_refresh=False, proxy=None):
             continue
         if not isinstance(ret, dict):
             continue
-        grains_data.update(ret)
+        if grains_deep_merge:
+            salt.utils.dictupdate.update(grains_data, ret)
+        else:
+            grains_data.update(ret)
 
     # Write cache if enabled
     if opts.get('grains_cache', False):
@@ -705,7 +713,10 @@ def grains(opts, force_refresh=False, proxy=None):
             log.error(msg.format(cfn))
         os.umask(cumask)
 
-    grains_data.update(opts['grains'])
+    if grains_deep_merge:
+        salt.utils.dictupdate.update(grains_data, opts['grains'])
+    else:
+        grains_data.update(opts['grains'])
     return grains_data
 
 

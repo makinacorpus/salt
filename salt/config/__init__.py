@@ -607,6 +607,10 @@ VALID_OPTS = {
     # A compound target definition. See: http://docs.saltstack.com/en/latest/topics/targeting/nodegroups.html
     'nodegroups': dict,
 
+    # List-only nodegroups for salt-ssh. Each group must be formed as either a
+    # comma-separated list, or a YAML list.
+    'ssh_list_nodegroups': dict,
+
     # The logfile location for salt-key
     'key_logfile': str,
 
@@ -795,6 +799,7 @@ DEFAULT_MINION_OPTS = {
     'cache_jobs': False,
     'grains_cache': False,
     'grains_cache_expiration': 300,
+    'grains_deep_merge': False,
     'conf_file': os.path.join(salt.syspaths.CONFIG_DIR, 'minion'),
     'sock_dir': os.path.join(salt.syspaths.SOCK_DIR, 'minion'),
     'backup_mode': '',
@@ -914,8 +919,6 @@ DEFAULT_MINION_OPTS = {
     'recon_randomize': True,
     'return_retry_timer': 5,
     'return_retry_timer_max': 10,
-    'syndic_log_file': os.path.join(salt.syspaths.LOGS_DIR, 'syndic'),
-    'syndic_pidfile': os.path.join(salt.syspaths.PIDFILE_DIR, 'salt-syndic.pid'),
     'random_reauth_delay': 10,
     'winrepo_source_dir': 'salt://win/repo-ng/',
     'winrepo_dir': os.path.join(salt.syspaths.BASE_FILE_ROOTS_DIR, 'win', 'repo'),
@@ -1068,6 +1071,8 @@ DEFAULT_MASTER_OPTS = {
     'peer': {},
     'preserve_minion_cache': False,
     'syndic_master': '',
+    'syndic_log_file': os.path.join(salt.syspaths.LOGS_DIR, 'syndic'),
+    'syndic_pidfile': os.path.join(salt.syspaths.PIDFILE_DIR, 'salt-syndic.pid'),
     'runner_dirs': [],
     'outputter_dirs': [],
     'client_acl': {},
@@ -1141,6 +1146,7 @@ DEFAULT_MASTER_OPTS = {
     'search_index_interval': 3600,
     'loop_interval': 60,
     'nodegroups': {},
+    'ssh_list_nodegroups': {},
     'cython_enable': False,
     'enable_gpu_grains': False,
     # XXX: Remove 'key_logfile' support in 2014.1.0
@@ -1235,7 +1241,7 @@ DEFAULT_PROXY_MINION_OPTS = {
     # salt.vt will have trouble with our forking model.
     # Proxies with non-persistent (mostly REST API) connections
     # can change this back to True
-    'multiprocessing': False
+    'multiprocessing': True
 }
 
 # ----- Salt Cloud Configuration Defaults ----------------------------------->
@@ -1309,9 +1315,14 @@ def _validate_file_roots(opts):
                     ' using defaults')
         return {'base': _expand_glob_path([salt.syspaths.BASE_FILE_ROOTS_DIR])}
     for saltenv, dirs in six.iteritems(opts['file_roots']):
+        normalized_saltenv = six.text_type(saltenv)
+        if normalized_saltenv != saltenv:
+            opts['file_roots'][normalized_saltenv] = \
+                opts['file_roots'].pop(saltenv)
         if not isinstance(dirs, (list, tuple)):
-            opts['file_roots'][saltenv] = []
-        opts['file_roots'][saltenv] = _expand_glob_path(opts['file_roots'][saltenv])
+            opts['file_roots'][normalized_saltenv] = []
+        opts['file_roots'][normalized_saltenv] = \
+            _expand_glob_path(opts['file_roots'][normalized_saltenv])
     return opts['file_roots']
 
 
