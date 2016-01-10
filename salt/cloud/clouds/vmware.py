@@ -230,7 +230,7 @@ def _edit_existing_hard_disk_helper(disk, size_kb):
     return disk_spec
 
 
-def _add_new_hard_disk_helper(disk_label, size_gb, unit_number, controller_key=1000):
+def _add_new_hard_disk_helper(disk_label, size_gb, unit_number, controller_key=1000, thin_provision=False):
     random_key = randint(-2099, -2000)
 
     size_kb = int(size_gb * 1024.0 * 1024.0)
@@ -245,6 +245,7 @@ def _add_new_hard_disk_helper(disk_label, size_gb, unit_number, controller_key=1
     disk_spec.device.deviceInfo.label = disk_label
     disk_spec.device.deviceInfo.summary = "{0} GB".format(size_gb)
     disk_spec.device.backing = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+    disk_spec.device.backing.thinProvisioned = thin_provision
     disk_spec.device.backing.diskMode = 'persistent'
     disk_spec.device.controllerKey = controller_key
     disk_spec.device.unitNumber = unit_number
@@ -611,7 +612,7 @@ def _manage_devices(devices, vm=None):
     if 'network' in list(devices.keys()):
         network_adapters_to_create = list(set(devices['network'].keys()) - set(existing_network_adapters_label))
         network_adapters_to_create.sort()
-        log.debug("Networks adapters to create: {0}".format(network_adapters_to_create))
+        log.debug("Networks adapters to create: {0}".format(network_adapters_to_create)) if network_adapters_to_create else None  # pylint: disable=W0106
         for network_adapter_label in network_adapters_to_create:
             network_name = devices['network'][network_adapter_label]['name']
             adapter_type = devices['network'][network_adapter_label]['adapter_type'] if 'adapter_type' in devices['network'][network_adapter_label] else ''
@@ -625,7 +626,7 @@ def _manage_devices(devices, vm=None):
     if 'scsi' in list(devices.keys()):
         scsi_controllers_to_create = list(set(devices['scsi'].keys()) - set(existing_scsi_controllers_label))
         scsi_controllers_to_create.sort()
-        log.debug("SCSI controllers to create: {0}".format(scsi_controllers_to_create))
+        log.debug("SCSI controllers to create: {0}".format(scsi_controllers_to_create)) if scsi_controllers_to_create else None  # pylint: disable=W0106
         for scsi_controller_label in scsi_controllers_to_create:
             # create the SCSI controller
             scsi_controller_properties = devices['scsi'][scsi_controller_label]
@@ -636,7 +637,7 @@ def _manage_devices(devices, vm=None):
     if 'ide' in list(devices.keys()):
         ide_controllers_to_create = list(set(devices['ide'].keys()) - set(existing_ide_controllers_label))
         ide_controllers_to_create.sort()
-        log.debug('IDE controllers to create: {0}'.format(ide_controllers_to_create))
+        log.debug('IDE controllers to create: {0}'.format(ide_controllers_to_create)) if ide_controllers_to_create else None  # pylint: disable=W0106
         for ide_controller_label in ide_controllers_to_create:
             # create the IDE controller
             ide_spec = _add_new_ide_controller_helper(ide_controller_label, None, bus_number)
@@ -646,11 +647,12 @@ def _manage_devices(devices, vm=None):
     if 'disk' in list(devices.keys()):
         disks_to_create = list(set(devices['disk'].keys()) - set(existing_disks_label))
         disks_to_create.sort()
-        log.debug("Hard disks to create: {0}".format(disks_to_create))
+        log.debug("Hard disks to create: {0}".format(disks_to_create)) if disks_to_create else None  # pylint: disable=W0106
         for disk_label in disks_to_create:
             # create the disk
             size_gb = float(devices['disk'][disk_label]['size'])
-            disk_spec = _add_new_hard_disk_helper(disk_label, size_gb, unit_number)
+            thin_provision = bool(devices['disk'][disk_label]['thin_provision']) if 'thin_provision' in devices['disk'][disk_label] else False
+            disk_spec = _add_new_hard_disk_helper(disk_label, size_gb, unit_number, thin_provision=thin_provision)
 
             # when creating both SCSI controller and Hard disk at the same time we need the randomly
             # assigned (temporary) key of the newly created SCSI controller
@@ -666,7 +668,7 @@ def _manage_devices(devices, vm=None):
     if 'cd' in list(devices.keys()):
         cd_drives_to_create = list(set(devices['cd'].keys()) - set(existing_cd_drives_label))
         cd_drives_to_create.sort()
-        log.debug("CD/DVD drives to create: {0}".format(cd_drives_to_create))
+        log.debug("CD/DVD drives to create: {0}".format(cd_drives_to_create)) if cd_drives_to_create else None  # pylint: disable=W0106
         for cd_drive_label in cd_drives_to_create:
             # create the CD/DVD drive
             device_type = devices['cd'][cd_drive_label]['device_type'] if 'device_type' in devices['cd'][cd_drive_label] else ''
@@ -3098,6 +3100,9 @@ def create_snapshot(name, kwargs=None, call=None):
             '-a or --action.'
         )
 
+    if kwargs is None:
+        kwargs = {}
+
     snapshot_name = kwargs.get('snapshot_name') if kwargs and 'snapshot_name' in kwargs else None
 
     if not snapshot_name:
@@ -3168,6 +3173,9 @@ def revert_to_snapshot(name, kwargs=None, call=None):
             'The revert_to_snapshot action must be called with '
             '-a or --action.'
         )
+
+    if kwargs is None:
+        kwargs = {}
 
     suppress_power_on = _str_to_bool(kwargs.get('power_off', False))
 

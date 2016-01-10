@@ -540,7 +540,8 @@ class Pillar(object):
                                         state,
                                         nstate,
                                         self.merge_strategy,
-                                        self.opts.get('renderer', 'yaml'))
+                                        self.opts.get('renderer', 'yaml'),
+                                        self.opts.get('pillar_merge_lists', 'False'))
 
                                 if err:
                                     errors += err
@@ -579,7 +580,8 @@ class Pillar(object):
                         pillar,
                         pstate,
                         self.merge_strategy,
-                        self.opts.get('renderer', 'yaml'))
+                        self.opts.get('renderer', 'yaml'),
+                        self.opts.get('pillar_merge_lists', 'False'))
 
         return pillar, errors
 
@@ -626,6 +628,8 @@ class Pillar(object):
         # Bring in CLI pillar data
         pillar.update(self.pillar_override)
         for run in self.opts['ext_pillar']:
+            if run in self.opts.get('exclude_ext_pillar', []):
+                continue
             if not isinstance(run, dict):
                 log.critical('The "ext_pillar" option is malformed')
                 return {}
@@ -665,7 +669,8 @@ class Pillar(object):
                     pillar,
                     ext,
                     self.merge_strategy,
-                    self.opts.get('renderer', 'yaml'))
+                    self.opts.get('renderer', 'yaml'),
+                    self.opts.get('pillar_merge_lists', 'False'))
                 ext = None
         return pillar
 
@@ -682,7 +687,8 @@ class Pillar(object):
                 pillar = merge(pillar,
                                self.opts['pillar'],
                                self.merge_strategy,
-                               self.opts.get('renderer', 'yaml'))
+                               self.opts.get('renderer', 'yaml'),
+                               self.opts.get('pillar_merge_lists', 'False'))
             else:
                 matches = self.top_matches(top)
                 pillar, errors = self.render_pillar(matches)

@@ -506,6 +506,7 @@ def latest(name,
 
     if bare:
         remote_rev = None
+        remote_rev_type = None
     else:
         if rev == 'HEAD':
             if 'HEAD' in all_remote_refs:
@@ -543,6 +544,7 @@ def latest(name,
                 remote_rev_type = 'sha1'
             else:
                 remote_rev = None
+                remote_rev_type = None
 
         # For the comment field of the state return dict, the remote location
         # (and short-sha1, if rev is not a sha1) is referenced several times,
@@ -552,7 +554,7 @@ def latest(name,
                 remote_loc = 'remote HEAD (' + remote_rev[:7] + ')'
             else:
                 remote_loc = remote_rev[:7]
-        else:
+        elif remote_rev is not None:
             remote_loc = '{0} ({1})'.format(
                 desired_upstream if remote_rev_type == 'branch' else rev,
                 remote_rev[:7]
@@ -586,7 +588,7 @@ def latest(name,
             all_local_tags = __salt__['git.list_tags'](target, user=user)
             local_rev, local_branch = _get_local_rev_and_branch(target, user)
 
-            if remote_rev is None and local_rev is not None:
+            if not bare and remote_rev is None and local_rev is not None:
                 return _fail(
                     ret,
                     'Remote repository is empty, cannot update from a '
@@ -985,8 +987,8 @@ def latest(name,
                         if isinstance(exc, CommandExecutionError):
                             msg += (
                                 '. Set \'force_fetch\' to True to force '
-                                'the fetch if the failure was due to it '
-                                'bein non-fast-forward. Output of the '
+                                'the fetch if the failure was due to not '
+                                'being able fast-forward. Output of the '
                                 'fetch command follows:\n\n'
                             )
                             msg += _strip_exc(exc)
@@ -1223,7 +1225,7 @@ def latest(name,
             ret['comment'] = _format_comments(comments)
             ret['changes']['revision'] = {'old': local_rev, 'new': new_rev}
         else:
-            return _uptodate(ret, target, comments)
+            return _uptodate(ret, target, _format_comments(comments))
     else:
         if os.path.isdir(target):
             if force_clone:

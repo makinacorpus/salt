@@ -48,6 +48,9 @@ service, then set the reload value to True:
 from __future__ import absolute_import
 import time
 
+# Import Salt libs
+from salt.exceptions import CommandExecutionError
+
 
 def __virtual__():
     '''
@@ -76,7 +79,12 @@ def _enable(name, started, result=True, **kwargs):
     ret = {}
 
     # is service available?
-    if not _available(name, ret):
+    try:
+        if not _available(name, ret):
+            return ret
+    except CommandExecutionError as exc:
+        ret['result'] = False
+        ret['comment'] = exc.strerror
         return ret
 
     # Check to see if this minion supports enable
@@ -160,8 +168,13 @@ def _disable(name, started, result=True, **kwargs):
     ret = {}
 
     # is service available?
-    if not _available(name, ret):
-        ret['result'] = True
+    try:
+        if not _available(name, ret):
+            ret['result'] = True
+            return ret
+    except CommandExecutionError as exc:
+        ret['result'] = False
+        ret['comment'] = exc.strerror
         return ret
 
     # is enable/disable available?
@@ -287,13 +300,21 @@ def running(name, enable=None, sig=None, init_delay=None, **kwargs):
         return _enabled_used_error(ret)
 
     # Check if the service is available
-    if not _available(name, ret):
+    try:
+        if not _available(name, ret):
+            return ret
+    except CommandExecutionError as exc:
+        ret['result'] = False
+        ret['comment'] = exc.strerror
         return ret
 
     # lot of custom init script wont or mis implement the status
     # command, so it is just an indicator but can not be fully trusted
     before_toggle_status = __salt__['service.status'](name, sig)
-    before_toggle_enable_status = __salt__['service.enabled'](name)
+    if 'service.enabled' in __salt__:
+        before_toggle_enable_status = __salt__['service.enabled'](name)
+    else:
+        before_toggle_enable_status = True
 
     # See if the service is already running
     if before_toggle_status:
@@ -328,7 +349,10 @@ def running(name, enable=None, sig=None, init_delay=None, **kwargs):
 
     # only force a change state if we have explicitly detected them
     after_toggle_status = __salt__['service.status'](name)
-    after_toggle_enable_status = __salt__['service.enabled'](name)
+    if 'service.enabled' in __salt__:
+        after_toggle_enable_status = __salt__['service.enabled'](name)
+    else:
+        after_toggle_enable_status = True
     if (
         (before_toggle_enable_status != after_toggle_enable_status) or
         (before_toggle_status != after_toggle_status)
@@ -369,14 +393,22 @@ def dead(name, enable=None, sig=None, **kwargs):
         return _enabled_used_error(ret)
 
     # Check if the service is available
-    if not _available(name, ret):
-        ret['result'] = True
+    try:
+        if not _available(name, ret):
+            ret['result'] = True
+            return ret
+    except CommandExecutionError as exc:
+        ret['result'] = False
+        ret['comment'] = exc.strerror
         return ret
 
     # lot of custom init script wont or mis implement the status
     # command, so it is just an indicator but can not be fully trusted
     before_toggle_status = __salt__['service.status'](name, sig)
-    before_toggle_enable_status = __salt__['service.enabled'](name)
+    if 'service.enabled' in __salt__:
+        before_toggle_enable_status = __salt__['service.enabled'](name)
+    else:
+        before_toggle_enable_status = True
     if not before_toggle_status:
         ret['comment'] = 'The service {0} is already dead'.format(name)
         if enable is True and not before_toggle_enable_status:
@@ -407,7 +439,10 @@ def dead(name, enable=None, sig=None, **kwargs):
             ret.update(_disable(name, False, **kwargs))
     # only force a change state if we have explicitly detected them
     after_toggle_status = __salt__['service.status'](name)
-    after_toggle_enable_status = __salt__['service.enabled'](name)
+    if 'service.enabled' in __salt__:
+        after_toggle_enable_status = __salt__['service.enabled'](name)
+    else:
+        after_toggle_enable_status = True
     if (
         (before_toggle_enable_status != after_toggle_enable_status) or
         (before_toggle_status != after_toggle_status)

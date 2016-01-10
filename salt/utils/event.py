@@ -209,14 +209,18 @@ class SaltEvent(object):
         else:
             self.opts['sock_dir'] = sock_dir
 
-        if salt.utils.is_windows() and not hasattr(self.opts, 'ipc_mode'):
+        if salt.utils.is_windows() and 'ipc_mode' not in opts:
             self.opts['ipc_mode'] = 'tcp'
         self.puburi, self.pulluri = self.__load_uri(sock_dir, node)
         self.pending_tags = []
         self.pending_events = []
-        if not self.cpub:
-            self.connect_pub()
         self.__load_cache_regex()
+        if listen and not self.cpub:
+            # Only connect to the publisher at initialization time if
+            # we know we want to listen. If we connect to the publisher
+            # and don't read out events from the buffer on an on-going basis,
+            # the buffer will grow resulting in big memory usage.
+            self.connect_pub()
 
     @classmethod
     def __load_cache_regex(cls):
@@ -353,7 +357,7 @@ class SaltEvent(object):
                     )
                 try:
                     self.io_loop.run_sync(
-                        lambda: self.subscriber.connect(timeout=timeout))
+                        lambda: self.pusher.connect(timeout=timeout))
                     self.cpush = True
                 except Exception:
                     pass
@@ -917,6 +921,17 @@ class EventPublisher(salt.utils.process.SignalHandlingMultiprocessingProcess):
         self.opts.update(opts)
         self._closing = False
 
+    # __setstate__ and __getstate__ are only used on Windows.
+    # We do this so that __init__ will be invoked on Windows in the child
+    # process so that a register_after_fork() equivalent will work on Windows.
+    def __setstate__(self, state):
+        self._is_child = True
+        self.__init__(state['opts'], log_queue=state['log_queue'])
+
+    def __getstate__(self):
+        return {'opts': self.opts,
+                'log_queue': self.log_queue}
+
     def run(self):
         '''
         Bind the pub and pull sockets for events
@@ -1024,6 +1039,17 @@ class EventReturn(salt.utils.process.SignalHandlingMultiprocessingProcess):
         self.minion = salt.minion.MasterMinion(local_minion_opts)
         self.event_queue = []
         self.stop = False
+
+    # __setstate__ and __getstate__ are only used on Windows.
+    # We do this so that __init__ will be invoked on Windows in the child
+    # process so that a register_after_fork() equivalent will work on Windows.
+    def __setstate__(self, state):
+        self._is_child = True
+        self.__init__(state['opts'], log_queue=state['log_queue'])
+
+    def __getstate__(self):
+        return {'opts': self.opts,
+                'log_queue': self.log_queue}
 
     def _handle_signals(self, signum, sigframe):
         # Flush and terminate

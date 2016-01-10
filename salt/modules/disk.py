@@ -78,6 +78,8 @@ def usage(args=None):
         cmd = 'df -P'
     elif __grains__['kernel'] == 'OpenBSD':
         cmd = 'df -kP'
+    elif __grains__['kernel'] == 'AIX':
+        cmd = 'df -kP'
     else:
         cmd = 'df'
     if flags:
@@ -98,9 +100,11 @@ def usage(args=None):
             continue
         else:
             oldline = None
-        while not comps[1].isdigit():
+        while len(comps) >= 2 and not comps[1].isdigit():
             comps[0] = '{0} {1}'.format(comps[0], comps[1])
             comps.pop(1)
+        if len(comps) < 2:
+            continue
         try:
             if __grains__['kernel'] == 'Darwin':
                 ret[comps[8]] = {
@@ -472,11 +476,13 @@ def hpa(disks, size=None):
 
     It's often used by OEMS to hide parts of a disk, and for overprovisioning SSD's
 
-    *WARNING* Setting the HPA might clobber your data, be very careful with this on active disks!
+    .. warning::
+        Setting the HPA might clobber your data, be very careful with this on active disks!
 
     .. versionadded:: Boron
 
     CLI Example:
+
     .. code-block:: bash
 
         salt '*' disk.hpa /dev/sda
@@ -528,6 +534,7 @@ def smart_attributes(dev, attributes=None, values=None):
     .. versionadded:: Boron
 
     CLI Example:
+
     .. code-block:: bash
 
         salt '*' disk.smart_attributes /dev/sda
@@ -595,7 +602,9 @@ def iostat(interval=1, count=5, disks=None):
     .. versionadded:: Boron
 
     CLI Example:
+
     .. code-block:: bash
+
         salt '*' disk.iostat 1 5 disks=sda
     '''
     if salt.utils.is_linux():

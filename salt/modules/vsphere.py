@@ -139,6 +139,74 @@ def __virtual__():
     return __virtualname__
 
 
+def esxcli_cmd(host, username, password, cmd_str, protocol=None, port=None, esxi_hosts=None):
+    '''
+    Run an ESXCLI command directly on the host or list of hosts.
+
+    host
+        The location of the host.
+
+    username
+        The username used to login to the host, such as ``root``.
+
+    password
+        The password used to login to the host.
+
+    cmd_str
+        The ESXCLI command to run. Note: This should not include the ``-s``, ``-u``,
+        ``-p``, ``-h``, ``--protocol``, or ``--portnumber`` arguments that are
+         frequently passed when using a bare ESXCLI command from the command line.
+         Those arguments are handled by this function via the other args and kwargs.
+
+    protocol
+        Optionally set to alternate protocol if the host is not using the default
+        protocol. Default protocol is ``https``.
+
+    port
+        Optionally set to alternate port if the host is not using the default
+        port. Default port is ``443``.
+
+    esxi_hosts
+        If ``host`` is a vCenter host, then use esxi_hosts to execute this function
+        on a list of one or more ESXi machines.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        # Used for ESXi host connection information
+        salt '*' vsphere.esxcli_cmd my.esxi.host root bad-password \
+            'system coredump network get'
+
+        # Used for connecting to a vCenter Server
+        salt '*' vsphere.esxcli_cmd my.vcenter.location root bad-password \
+            'system coredump network get' esxi_hosts='[esxi-1.host.com, esxi-2.host.com]'
+    '''
+    ret = {}
+    if esxi_hosts:
+        if not isinstance(esxi_hosts, list):
+            raise CommandExecutionError('\'esxi_hosts\' must be a list.')
+
+        for esxi_host in esxi_hosts:
+            response = salt.utils.vmware.esxcli(host, username, password, cmd_str,
+                                                protocol=protocol, port=port,
+                                                esxi_host=esxi_host)
+            if response['retcode'] != 0:
+                ret.update({esxi_host: {'Error': response.get('stdout')}})
+            else:
+                ret.update({esxi_host: response})
+    else:
+        # Handles a single host or a vCenter connection when no esxi_hosts are provided.
+        response = salt.utils.vmware.esxcli(host, username, password, cmd_str,
+                                            protocol=protocol, port=port)
+        if response['retcode'] != 0:
+            ret.update({host: {'Error': response.get('stdout')}})
+        else:
+            ret.update({host: response})
+
+    return ret
+
+
 def get_coredump_network_config(host, username, password, protocol=None, port=None, esxi_hosts=None):
     '''
     Retrieve information on ESXi or vCenter network dump collection and
@@ -807,7 +875,8 @@ def reset_syslog_config(host,
         port. Default port is ``443``.
 
     syslog_config
-        List of parameters to reset, or 'all' to reset everything.
+        List of parameters to reset, provided as a comma-delimited string, or 'all' to
+        reset all syslog configuration parameters. Required.
 
     esxi_hosts
         If ``host`` is a vCenter host, then use esxi_hosts to execute this function
@@ -831,6 +900,10 @@ def reset_syslog_config(host,
         salt '*' vsphere.reset_syslog_config my.vcenter.location root bad-password \
             syslog_config='logdir,loghost' esxi_hosts='[esxi-1.host.com, esxi-2.host.com]'
     '''
+    if not syslog_config:
+        raise CommandExecutionError('The \'reset_syslog_config\' function requires a '
+                                    '\'syslog_config\' setting.')
+
     valid_resets = ['logdir', 'loghost', 'default-rotate',
                     'default-size', 'default-timeout', 'logdir-unique']
     cmd = 'system syslog config set --reset='
@@ -2900,6 +2973,10 @@ def vsan_add_disks(host, username, password, protocol=None, port=None, host_name
                 try:
                     task = vsan_system.AddDisks(eligible)
                     salt.utils.vmware.wait_for_task(task, host_name, 'Adding disks to VSAN', sleep_seconds=3)
+                except vim.fault.InsufficientDisks as err:
+                    log.debug(err.msg)
+                    ret.update({host_name: {'Error': err.msg}})
+                    continue
                 except Exception as err:
                     msg = '\'vsphere.vsan_add_disks\' failed for host {0}: {1}'.format(host_name, err)
                     log.debug(msg)
@@ -3264,8 +3341,8 @@ def _get_service_manager(host_reference):
 def _get_vsan_eligible_disks(service_instance, host, host_names):
     '''
     Helper function that returns a dictionary of host_name keys with either a list of eligible
-    disks that can be added to VSAN or either and 'Error' message or a message saying no
-    eligible disks were found. Possible keys/values look like so:
+    disks that can be added to VSAN or either an 'Error' message or a message saying no
+    eligible disks were found. Possible keys/values look like:
 
     return = {'host_1': {'Error': 'VSAN System Config Manager is unset ...'},
               'host_2': {'Eligible': 'The host xxx does not have any VSAN eligible disks.'},
@@ -3324,6 +3401,9 @@ def _reset_syslog_config_params(host, username, password, cmd, resets, valid_res
     ret_dict = {}
     all_success = True
 
+    if not isinstance(resets, list):
+        resets = [resets]
+
     for reset_param in resets:
         if reset_param in valid_resets:
             ret = salt.utils.vmware.esxcli(host, username, password, cmd + reset_param,
@@ -3357,8 +3437,9 @@ def _set_syslog_config_helper(host, username, password, syslog_config, config_va
     valid_resets = ['logdir', 'loghost', 'default-rotate',
                     'default-size', 'default-timeout', 'logdir-unique']
     if syslog_config not in valid_resets:
-        return ret_dict.update({'success': False,
-                                'message': '\'{0}\' is not a valid config variable.'.format(syslog_config)})
+        ret_dict.update({'success': False,
+                         'message': '\'{0}\' is not a valid config variable.'.format(syslog_config)})
+        return ret_dict
 
     response = salt.utils.vmware.esxcli(host, username, password, cmd,
                                         protocol=protocol, port=port,

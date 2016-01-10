@@ -49,13 +49,17 @@ def __virtual__():
     These are usually provided by the ``parted`` and ``util-linux`` packages.
     '''
     if salt.utils.is_windows():
-        return False
+        return (False, 'The parted execution module failed to load '
+                'Windows systems are not supported.')
     if not salt.utils.which('parted'):
-        return False
+        return (False, 'The parted execution module failed to load '
+                'parted binary is not in the path.')
     if not salt.utils.which('lsblk'):
-        return False
+        return (False, 'The parted execution module failed to load '
+                'lsblk binary is not in the path.')
     if not salt.utils.which('partprobe'):
-        return False
+        return (False, 'The parted execution module failed to load '
+                'partprobe binary is not in the path.')
     return __virtualname__
 
 
@@ -636,6 +640,9 @@ def set_(device, minor, flag, state):
         "on" or "off". Some or all of these flags will be available, depending
         on what disk label you are using.
 
+    Valid flags are: bios_grub, legacy_boot, boot, lba, root, swap, hidden, raid,
+        LVM, PALO, PREP, DIAG
+
     CLI Example:
 
     .. code-block:: bash
@@ -667,13 +674,14 @@ def toggle(device, partition, flag):
     '''
     partition.toggle device partition flag
 
-    Toggle the state of <flag> on <partition>
+    Toggle the state of <flag> on <partition>. Valid flags are the same as
+        the set command.
 
     CLI Example:
 
     .. code-block:: bash
 
-        salt '*' partition.name /dev/sda 1 boot
+        salt '*' partition.toggle /dev/sda 1 boot
     '''
     _validate_device(device)
 

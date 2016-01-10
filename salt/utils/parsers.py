@@ -784,6 +784,7 @@ class LogLevelMixIn(six.with_metaclass(MixInMeta, object)):
     def _setup_mp_logging_listener(self, *args):  # pylint: disable=unused-argument
         if self._setup_mp_logging_listener_:
             log.setup_multiprocessing_logging_listener(
+                self.config,
                 self._get_mp_logging_listener_queue()
             )
 
@@ -2917,7 +2918,8 @@ class SPMParser(six.with_metaclass(OptionParserMeta,
                                    OptionParser,
                                    ConfigDirMixIn,
                                    LogLevelMixIn,
-                                   MergeConfigMixIn)):
+                                   MergeConfigMixIn,
+                                   SaltfileMixIn)):
     '''
     The cli parser object used to fire up the salt spm system.
     '''

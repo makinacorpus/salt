@@ -464,41 +464,42 @@ def _check_directory(name,
             walk_d[i[0]] = (i[1], i[2])
 
     if recurse:
-        if not set(['user', 'group', 'mode']) >= set(recurse):
-            return False, 'Types for "recurse" limited to "user", ' \
-                          '"group" and "mode"', changes
-        if 'user' not in recurse:
+        try:
+            recurse_set = _get_recurse_set(recurse)
+        except (TypeError, ValueError) as exc:
+            return False, '{0}'.format(exc), changes
+        if 'user' not in recurse_set:
             user = None
-        if 'group' not in recurse:
+        if 'group' not in recurse_set:
             group = None
-        if 'mode' not in recurse:
+        if 'mode' not in recurse_set:
             mode = None
+        check_files = 'ignore_files' not in recurse_set
+        check_dirs = 'ignore_dirs' not in recurse_set
         for root, dirs, files in walk_l:
-            for fname in files:
-                fchange = {}
-                path = os.path.join(root, fname)
-                stats = __salt__['file.stats'](
-                    path, None, follow_symlinks=False
-                )
-                if (user is not None
-                        and user != stats.get('user')
-                        and user != stats.get('uid')):
-                    fchange['user'] = user
-                if (group is not None
-                        and group != stats.get('group')
-                        and group != stats.get('gid')):
-                    fchange['group'] = group
-                if fchange:
-                    changes[path] = fchange
-            for name_ in dirs:
-                path = os.path.join(root, name_)
-                fchange = _check_dir_meta(path, user, group, mode)
-                if fchange:
-                    changes[path] = fchange
-    else:
-        fchange = _check_dir_meta(name, user, group, mode)
-        if fchange:
-            changes[name] = fchange
+            if check_files:
+                for fname in files:
+                    fchange = {}
+                    path = os.path.join(root, fname)
+                    stats = __salt__['file.stats'](
+                        path, None, follow_symlinks=False
+                    )
+                    if user is not None and user != stats.get('user'):
+                        fchange['user'] = user
+                    if group is not None and group != stats.get('group'):
+                        fchange['group'] = group
+                    if fchange:
+                        changes[path] = fchange
+            if check_dirs:
+                for name_ in dirs:
+                    path = os.path.join(root, name_)
+                    fchange = _check_dir_meta(path, user, group, mode)
+                    if fchange:
+                        changes[path] = fchange
+    # Recurse skips root (we always do dirs, not root), so always check root:
+    fchange = _check_dir_meta(name, user, group, mode)
+    if fchange:
+        changes[name] = fchange
     if clean:
         keep = _gen_keep_files(name, require, walk_d)
 
@@ -1085,7 +1086,8 @@ def managed(name,
             defaults=None,
             env=None,
             backup='',
-            show_diff=True,
+            show_diff=None,
+            show_changes=True,
             create=True,
             contents=None,
             contents_pillar=None,
@@ -1251,7 +1253,11 @@ def managed(name,
         Overrides the default backup mode for this specific file.
 
     show_diff
-        If set to False, the diff will not be shown.
+        DEPRECATED: Please use show_changes.
+
+    show_changes
+        Output a unified diff of the old file and the new file. If ``False``
+        return a boolean if any changes were made.
 
     create
         Default is True, if create is set to False then the file will only be
@@ -1468,15 +1474,23 @@ def managed(name,
     else:
         ret['pchanges'] = {}
 
+    if show_diff is not None:
+        show_changes = show_diff
+        msg = (
+            'The \'show_diff\' argument to the file.managed state has been '
+            'deprecated, please use \'show_changes\' instead.'
+        )
+        salt.utils.warn_until('Boron', msg)
+
     try:
         if __opts__['test']:
             if ret['pchanges']:
                 ret['result'] = None
                 ret['comment'] = 'The file {0} is set to be changed'.format(name)
-                if show_diff and 'diff' in ret['pchanges']:
+                if show_changes and 'diff' in ret['pchanges']:
                     ret['changes']['diff'] = ret['pchanges']['diff']
-                if not show_diff:
-                    ret['changes']['diff'] = '<show_diff=False>'
+                if not show_changes:
+                    ret['changes']['diff'] = '<show_changes=False>'
             else:
                 ret['result'] = True
                 ret['comment'] = 'The file {0} is in the correct state'.format(name)
@@ -1607,6 +1621,32 @@ def managed(name,
         finally:
             if tmp_filename and os.path.isfile(tmp_filename):
                 os.remove(tmp_filename)
+
+
+_RECURSE_TYPES = ['user', 'group', 'mode', 'ignore_files', 'ignore_dirs']
+
+
+def _get_recurse_set(recurse):
+    '''
+    Converse *recurse* definition to a set of strings.
+
+    Raises TypeError or ValueError when *recurse* has wrong structure.
+    '''
+    if not recurse:
+        return set()
+    if not isinstance(recurse, list):
+        raise TypeError('"recurse" must be formed as a list of strings')
+    try:
+        recurse_set = set(recurse)
+    except TypeError:  # non-hashable elements
+        recurse_set = None
+    if recurse_set is None or not set(_RECURSE_TYPES) >= recurse_set:
+        raise ValueError('Types for "recurse" limited to {0}.'.format(
+            ', '.join('"{0}"'.format(rtype) for rtype in _RECURSE_TYPES)))
+    if 'ignore_files' in recurse_set and 'ignore_dirs' in recurse_set:
+        raise ValueError('Must not specify "recurse" options "ignore_files"'
+                         ' and "ignore_dirs" at the same time.')
+    return recurse_set
 
 
 def directory(name,
@@ -1862,91 +1902,77 @@ def directory(name,
         for i in walk_l:
             walk_d[i[0]] = (i[1], i[2])
 
+    recurse_set = None
     if recurse:
-        if not isinstance(recurse, list):
+        try:
+            recurse_set = _get_recurse_set(recurse)
+        except (TypeError, ValueError) as exc:
             ret['result'] = False
-            ret['comment'] = '"recurse" must be formed as a list of strings'
-        elif not set(['user', 'group', 'mode', 'ignore_files',
-                      'ignore_dirs']) >= set(recurse):
-            ret['result'] = False
-            ret['comment'] = 'Types for "recurse" limited to "user", ' \
-                             '"group", "mode", "ignore_files, and "ignore_dirs"'
-        else:
-            if 'ignore_files' in recurse and 'ignore_dirs' in recurse:
+            ret['comment'] = '{0}'.format(exc)
+            # NOTE: Should this be enough to stop the whole check altogether?
+    if recurse_set:
+        if 'user' in recurse_set:
+            if user:
+                uid = __salt__['file.user_to_uid'](user)
+                # file.user_to_uid returns '' if user does not exist. Above
+                # check for user is not fatal, so we need to be sure user
+                # exists.
+                if isinstance(uid, six.string_types):
+                    ret['result'] = False
+                    ret['comment'] = 'Failed to enforce ownership for ' \
+                                     'user {0} (user does not ' \
+                                     'exist)'.format(user)
+            else:
                 ret['result'] = False
-                ret['comment'] = 'Can not specify "recurse" options "ignore_files" ' \
-                                 'and "ignore_dirs" at the same time.'
-                return ret
-
-            if 'user' in recurse:
-                if user:
-                    uid = __salt__['file.user_to_uid'](user)
-                    # file.user_to_uid returns '' if user does not exist. Above
-                    # check for user is not fatal, so we need to be sure user
-                    # exists.
-                    if isinstance(uid, six.string_types):
-                        ret['result'] = False
-                        ret['comment'] = 'Failed to enforce ownership for ' \
-                                         'user {0} (user does not ' \
-                                         'exist)'.format(user)
-                else:
+                ret['comment'] = 'user not specified, but configured as ' \
+                                 'a target for recursive ownership ' \
+                                 'management'
+        else:
+            user = None
+        if 'group' in recurse_set:
+            if group:
+                gid = __salt__['file.group_to_gid'](group)
+                # As above with user, we need to make sure group exists.
+                if isinstance(gid, six.string_types):
                     ret['result'] = False
-                    ret['comment'] = 'user not specified, but configured as ' \
-                                     'a target for recursive ownership ' \
-                                     'management'
+                    ret['comment'] = 'Failed to enforce group ownership ' \
+                                     'for group {0}'.format(group)
             else:
-                user = None
-            if 'group' in recurse:
-                if group:
-                    gid = __salt__['file.group_to_gid'](group)
-                    # As above with user, we need to make sure group exists.
-                    if isinstance(gid, six.string_types):
-                        ret['result'] = False
-                        ret['comment'] = 'Failed to enforce group ownership ' \
-                                         'for group {0}'.format(group)
-                else:
-                    ret['result'] = False
-                    ret['comment'] = 'group not specified, but configured ' \
-                                     'as a target for recursive ownership ' \
-                                     'management'
-            else:
-                group = None
+                ret['result'] = False
+                ret['comment'] = 'group not specified, but configured ' \
+                                 'as a target for recursive ownership ' \
+                                 'management'
+        else:
+            group = None
 
-            if 'mode' not in recurse:
-                file_mode = None
-                dir_mode = None
+        if 'mode' not in recurse_set:
+            file_mode = None
+            dir_mode = None
 
-            if 'ignore_files' in recurse:
-                ignore_files = True
-            else:
-                ignore_files = False
+        check_files = 'ignore_files' not in recurse_set
+        check_dirs = 'ignore_dirs' not in recurse_set
 
-            if 'ignore_dirs' in recurse:
-                ignore_dirs = True
-            else:
-                ignore_dirs = False
-
-            for root, dirs, files in walk_l:
-                if not ignore_files:
-                    for fn_ in files:
-                        full = os.path.join(root, fn_)
-                        ret, perms = __salt__['file.check_perms'](
-                            full,
-                            ret,
-                            user,
-                            group,
-                            file_mode,
-                            follow_symlinks)
-                if not ignore_dirs:
-                    for dir_ in dirs:
-                        full = os.path.join(root, dir_)
-                        ret, perms = __salt__['file.check_perms'](
-                            full,
-                            ret,
-                            user,
-                            group,
-                            dir_mode,
-                            follow_symlinks)
+        for root, dirs, files in walk_l:
+            if check_files:
+                for fn_ in files:
+                    full = os.path.join(root, fn_)
+                    ret, perms = __salt__['file.check_perms'](
+                        full,
+                        ret,
+                        user,
+                        group,
+                        file_mode,
+                        follow_symlinks)
+            if check_dirs:
+                for dir_ in dirs:
+                    full = os.path.join(root, dir_)
+                    ret, perms = __salt__['file.check_perms'](
+                        full,
+                        ret,
+                        user,
+                        group,
+                        dir_mode,
+                        follow_symlinks)
 
     if clean:
         keep = _gen_keep_files(name, require, walk_d)
@@ -4284,6 +4310,14 @@ def serialize(name,
     if dataset is None:
         return _error(
             ret, 'Neither \'dataset\' nor \'dataset_pillar\' was defined')
+
+    if salt.utils.is_windows():
+        if group is not None:
+            log.warning(
+                'The group argument for {0} has been ignored as this '
+                'is a Windows system.'.format(name)
+            )
+        group = user
 
     serializer_name = '{0}.serialize'.format(formatter)
     if serializer_name in __serializers__:
