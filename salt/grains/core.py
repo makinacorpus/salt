@@ -479,7 +479,7 @@ def _virtual(osdata):
     # Skip the below loop on platforms which have none of the desired cmds
     # This is a temporary measure until we can write proper virtual hardware
     # detection.
-    skip_cmds = ('AIX', 'SunOS',)
+    skip_cmds = ('AIX',)
 
     # list of commands to be executed to determine the 'virtual' grain
     _cmds = ['systemd-detect-virt', 'virt-what', 'dmidecode']
@@ -509,6 +509,9 @@ def _virtual(osdata):
         if osdata['kernel'] == 'Darwin':
             command = 'system_profiler'
             args = ['SPDisplaysDataType']
+        elif osdata['kernel'] == 'SunOS':
+            command = 'prtdiag'
+            args = []
 
         cmd = salt.utils.which(command)
 
@@ -640,6 +643,16 @@ def _virtual(osdata):
             if output:
                 grains['virtual'] = output.lower()
             break
+        elif command == 'prtdiag':
+            model = output.lower().split("\n")[0]
+            if 'vmware' in model:
+                grains['virtual'] = 'VMware'
+            elif 'virtualbox' in model:
+                grains['virtual'] = 'VirtualBox'
+            elif 'qemu' in model:
+                grains['virtual'] = 'kvm'
+            elif 'joyent smartdc hvm' in model:
+                grains['virtual'] = 'kvm'
     else:
         if osdata['kernel'] in skip_cmds:
             log.warn(
@@ -1384,7 +1397,14 @@ def os_data():
         grains.update(_osx_platform_data())
     else:
         grains['os'] = grains['kernel']
-    if grains['kernel'] in ('FreeBSD', 'OpenBSD', 'NetBSD'):
+    if grains['kernel'] == 'FreeBSD':
+        try:
+            grains['osrelease'] = __salt__['cmd.run']('freebsd-version -u').split('-')[0]
+        except salt.exceptions.CommandExecutionError:
+            # freebsd-version was introduced in 10.0.
+            # derive osrelease from kernelversion prior to that
+            grains['osrelease'] = grains['kernelrelease'].split('-')[0]
+    if grains['kernel'] in ('OpenBSD', 'NetBSD'):
         grains.update(_bsd_cpudata(grains))
         grains['osrelease'] = grains['kernelrelease'].split('-')[0]
         if grains['kernel'] == 'NetBSD':

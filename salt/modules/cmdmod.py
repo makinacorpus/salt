@@ -42,6 +42,7 @@ if salt.utils.is_windows():
 else:
     HAS_WIN_RUNAS = False
 
+__proxyenabled__ = ['*']
 # Define the module's virtual name
 __virtualname__ = 'cmd'
 
@@ -632,10 +633,17 @@ def _run_all_quiet(cmd,
                    reset_system_locale=True,
                    saltenv='base',
                    pillarenv=None,
-                   pillar_override=None):
+                   pillar_override=None,
+                   output_loglevel=None):
+
     '''
     Helper for running commands quietly for minion startup.
-    Returns a dict of return data
+    Returns a dict of return data.
+
+    output_loglevel argument is ignored.  This is here for when we alias
+    cmd.run_all directly to _run_all_quiet in certain chicken-and-egg
+    situations where modules need to work both before and after
+    the __salt__ dictionary is populated (cf dracr.py)
     '''
     return _run(cmd,
                 runas=runas,
