@@ -22,7 +22,7 @@ import time
 import shutil
 import re
 import random
-import distutils.version
+import distutils.version  # pylint: disable=no-name-in-module,import-error
 
 # Import salt libs
 import salt
@@ -117,7 +117,7 @@ def version():
     '''
     k = 'lxc.version'
     if not __context__.get(k, None):
-        cversion = __salt__['cmd.run_all']('lxc-ls --version')
+        cversion = __salt__['cmd.run_all']('lxc-info --version')
         if not cversion['retcode']:
             ver = distutils.version.LooseVersion(cversion['stdout'])
             if ver < distutils.version.LooseVersion('1.0'):
@@ -879,6 +879,10 @@ def _network_conf(conf_tuples=None, **kwargs):
 def _get_lxc_default_data(**kwargs):
     kwargs = copy.deepcopy(kwargs)
     ret = {}
+    for k in ['utsname', 'rootfs']:
+        val = kwargs.get(k, None)
+        if val is not None:
+            ret['lxc.{0}'.format(k)] = val
     autostart = kwargs.get('autostart')
     # autostart can have made in kwargs, but with the None
     # value which is invalid, we need an explicit boolean
@@ -1391,7 +1395,8 @@ def init(name,
     # If using a volume group then set up to make snapshot cow clones
     if vgname and not clone_from:
         try:
-            clone_from = _get_base(vgname=vgname, profile=profile, **kwargs)
+            kwargs['vgname'] = vgname
+            clone_from = _get_base(profile=profile, **kwargs)
         except (SaltInvocationError, CommandExecutionError) as exc:
             ret['comment'] = exc.strerror
             if changes:
@@ -2094,7 +2099,7 @@ def clone(name,
         cmd += ' -B {0}'.format(backing)
         if backing not in ('dir', 'overlayfs'):
             if size:
-                cmd += ' --fssize {0}'.format(size)
+                cmd += ' -L {0}'.format(size)
     ret = __salt__['cmd.run_all'](cmd, python_shell=False)
     # please do not merge extra conflicting stuff
     # inside those two line (ret =, return)
@@ -4549,6 +4554,8 @@ def reconfigure(name,
                 bridge=None,
                 gateway=None,
                 autostart=None,
+                utsname=None,
+                rootfs=None,
                 path=None,
                 **kwargs):
     '''
@@ -4558,6 +4565,16 @@ def reconfigure(name,
 
     name
         Name of the container.
+    utsname
+        utsname of the container.
+
+        .. versionadded:: Boron
+
+    rootfs
+        rootfs of the container.
+
+        .. versionadded:: Boron
+
     cpu
         Select a random number of cpu cores and assign it to the cpuset, if the
         cpuset option is set then this option will be ignored
@@ -4624,9 +4641,13 @@ def reconfigure(name,
         autostart = select('autostart', autostart)
     else:
         autostart = 'keep'
+    if not utsname:
+        utsname = select('utsname', utsname)
     if os.path.exists(path):
         old_chunks = read_conf(path, out_format='commented')
         make_kw = salt.utils.odict.OrderedDict([
+            ('utsname', utsname),
+            ('rootfs', rootfs),
             ('autostart', autostart),
             ('cpu', cpu),
             ('gateway', gateway),
