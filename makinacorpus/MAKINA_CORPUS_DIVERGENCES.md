@@ -44,3 +44,8 @@ Notes
     - [module](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/modules/zcbuildout.py)
     - [state](https://github.com/makinacorpus/makina-states/blob/master/salt_fork/states/zcbuildout.py)
 
+
+PR
+----
+ - [extpillar](https://github.com/saltstack/salt/pull/31380/commits)
+
