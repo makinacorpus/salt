@@ -264,7 +264,6 @@ class AsyncZeroMQPubChannel(salt.transport.mixins.auth.AESPubClientMixin, salt.t
         else:
             self._socket.setsockopt(zmq.SUBSCRIBE, '')
 
-        self._socket.setsockopt(zmq.SUBSCRIBE, '')
         self._socket.setsockopt(zmq.IDENTITY, self.opts['id'])
 
         # TODO: cleanup all the socket opts stuff
@@ -513,8 +512,8 @@ class ZeroMQReqServerChannel(salt.transport.mixins.auth.AESReqServerMixin, salt.
         try:
             payload = self.serial.loads(payload[0])
             payload = self._decode_payload(payload)
-        except Exception as e:
-            log.error('Bad load from minion')
+        except Exception as exc:
+            log.error('Bad load from minion: %s: %s', type(exc).__name__, exc)
             stream.send(self.serial.dumps('bad load'))
             raise tornado.gen.Return()
 

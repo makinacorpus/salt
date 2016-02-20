@@ -16,7 +16,7 @@ For remote signing, peers must be permitted to remotely call the
 :mod:`sign_remote_certificate <salt.modules.x509.sign_remote_certificate>` function.
 
 
-/etc/salt/master.d/peer.sls
+/etc/salt/master.d/peer.conf
 
 .. code-block:: yaml
 
@@ -205,7 +205,7 @@ def private_key_managed(name,
                         new=False,
                         backup=False):
     '''
-    Manage a private key's existance.
+    Manage a private key's existence.
 
     name:
         Path to the private key
@@ -347,11 +347,11 @@ def certificate_managed(name,
         Path to the certificate
 
     days_remaining:
-        The minimum number of days remaining when the certificate should be recreted. Default is 90. A
+        The minimum number of days remaining when the certificate should be recreated. Default is 90. A
         value of 0 disables automatic renewal.
 
     backup:
-        When replacing an existing file, backup the old file onthe minion. Default is False.
+        When replacing an existing file, backup the old file on the minion. Default is False.
 
     kwargs:
         Any arguments supported by :mod:`x509.create_certificate <salt.modules.x509.create_certificate>`
@@ -623,6 +623,9 @@ def pem_managed(name,
         ret['result'] = True
         ret['comment'] = 'The file is already in the correct state'
         return ret
+
+    ret['changes']['new'] = new
+    ret['changes']['old'] = current
 
     if __opts__['test'] is True:
         ret['result'] = None

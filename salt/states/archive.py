@@ -7,6 +7,7 @@ Extract an archive
 
 # Import Python libs
 from __future__ import absolute_import
+import re
 import os
 import logging
 import tarfile
@@ -168,7 +169,7 @@ def extracted(name,
     filename = os.path.join(__opts__['cachedir'],
                             'files',
                             __env__,
-                            '{0}.{1}'.format(if_missing.replace('/', '_'),
+                            '{0}.{1}'.format(re.sub('[:/\\\\]', '_', if_missing),
                                              archive_format))
     if not os.path.exists(filename):
         if __opts__['test']:
@@ -267,8 +268,6 @@ def extracted(name,
     if len(files) > 0:
         ret['result'] = True
         ret['changes']['directories_created'] = [name]
-        if if_missing != name:
-            ret['changes']['directories_created'].append(if_missing)
         ret['changes']['extracted_files'] = files
         ret['comment'] = '{0} extracted in {1}'.format(source, name)
         if not keep:

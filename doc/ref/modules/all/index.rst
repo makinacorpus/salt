@@ -1,4 +1,4 @@
-.. _all-salt.modules:
+.. _all-salt_modules:
 
 ======================================
 Full list of builtin execution modules
@@ -107,7 +107,6 @@ Full list of builtin execution modules
     freebsdpkg
     freebsdports
     freebsdservice
-    fsutils
     gem
     genesis
     gentoo_service
@@ -237,7 +236,6 @@ Full list of builtin execution modules
     redismod
     reg
     rest_package
-    rest_sample
     rest_service
     ret
     rh_ip
@@ -261,6 +259,7 @@ Full list of builtin execution modules
     service
     shadow
     slack_notify
+    slsutil
     smartos_imgadm
     smartos_virt
     smartos_vmadm
@@ -291,7 +290,6 @@ Full list of builtin execution modules
     sysrc
     system
     system_profiler
-    system_rest_sample
     systemd
     temp
     test

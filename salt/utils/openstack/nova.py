@@ -25,8 +25,7 @@ try:
     import novaclient.base
     HAS_NOVA = True
 except ImportError:
-    class OpenStackComputeShell(object):
-        '''mock class for errors'''
+    pass
 # pylint: enable=import-error
 
 # Import salt libs
@@ -140,22 +139,14 @@ class NovaServer(object):
             'access_ip': server['accessIPv4']
         }
 
-        if 'addresses' in server:
-            if 'public' in server['addresses']:
-                self.public_ips = [
-                    ip['addr'] for ip in server['addresses']['public']
-                ]
-            else:
-                self.public_ips = []
-
-            if 'private' in server['addresses']:
-                self.private_ips = [
-                    ip['addr'] for ip in server['addresses']['private']
-                ]
-            else:
-                self.private_ips = []
-
-            self.addresses = server['addresses']
+        self.addresses = server.get('addresses', {})
+        self.public_ips, self.private_ips = [], []
+        for network in self.addresses.values():
+            for addr in network:
+                if salt.utils.cloud.is_public_ip(addr['addr']):
+                    self.public_ips.append(addr['addr'])
+                else:
+                    self.private_ips.append(addr['addr'])
 
         if password:
             self.extra['password'] = password
@@ -191,10 +182,12 @@ def sanatize_novaclient(kwargs):
 
 
 # Function alias to not shadow built-ins
-class SaltNova(OpenStackComputeShell):
+class SaltNova(object):
     '''
     Class for all novaclient functions
     '''
+    extensions = []
+
     def __init__(
         self,
         username,
@@ -209,9 +202,11 @@ class SaltNova(OpenStackComputeShell):
         Set up nova credentials
         '''
         self.kwargs = kwargs.copy()
-
-        if not novaclient.base.Manager._hooks_map:
-            self.extensions = getattr(self, '_discover_extensions', client.discover_extensions)('1.1')
+        if not self.extensions:
+            if hasattr(OpenStackComputeShell, '_discover_extensions'):
+                self.extensions = OpenStackComputeShell()._discover_extensions('2.0')
+            else:
+                self.extensions = client.discover_extensions('2.0')
             for extension in self.extensions:
                 extension.run_hooks('__pre_parse_args__')
             self.kwargs['extensions'] = self.extensions
@@ -296,7 +291,7 @@ class SaltNova(OpenStackComputeShell):
                         if not isinstance(value, novaclient.base.Manager):
                             continue
                         if value.__class__.__name__ == attr:
-                            setattr(connection, key, getattr(connection, extension.name))
+                            setattr(connection, key, extension.manager_class(connection))
 
     def get_catalog(self):
         '''

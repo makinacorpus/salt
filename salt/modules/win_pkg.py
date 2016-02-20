@@ -383,6 +383,13 @@ def refresh_db(saltenv='base'):
     else:
         winrepo_source_dir = __opts__['winrepo_source_dir']
 
+    # Clear minion repo-ng cache
+    repo_path = '{0}\\files\\{1}\\win\\repo-ng\\salt-winrepo-ng'\
+        .format(__opts__['cachedir'], saltenv)
+    if not __salt__['file.remove'](repo_path):
+        log.error('pkg.refresh_db: failed to clear existing cache')
+
+    # Cache repo-ng locally
     cached_files = __salt__['cp.cache_dir'](
         winrepo_source_dir,
         saltenv,
@@ -546,6 +553,7 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
 
     # Loop through each package
     changed = []
+    latest = []
     for pkg_name, options in six.iteritems(pkg_params):
 
         # Load package information for the package
@@ -578,6 +586,9 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
                       '{1}'.format(version_num, pkg_name))
             ret[pkg_name] = {'not found': version_num}
             continue
+
+        if 'latest' in pkginfo:
+            latest.append(pkg_name)
 
         # Get the installer
         installer = pkginfo[version_num].get('installer')
@@ -694,16 +705,37 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
 
     # Get a new list of installed software
     new = list_pkgs()
+
+    # For installers that have no specific version (ie: chrome)
+    # The software definition file will have a version of 'latest'
+    # In that case there's no way to know which version has been installed
+    # Just return the current installed version
+    # This has to be done before the loop below, otherwise the installation
+    # will not be detected
+    if latest:
+        for pkg_name in latest:
+            if old.get(pkg_name, 'old') == new.get(pkg_name, 'new'):
+                ret[pkg_name] = {'current': new[pkg_name]}
+
+    # Sometimes the installer takes awhile to update the registry
+    # This checks 10 times, 3 seconds between each for a registry change
     tries = 0
     difference = salt.utils.compare_dicts(old, new)
     while not all(name in difference for name in changed) and tries < 10:
+        __salt__['reg.broadcast_change']()
         time.sleep(3)
         new = list_pkgs()
         difference = salt.utils.compare_dicts(old, new)
         tries += 1
         log.debug("Try {0}".format(tries))
         if tries == 10:
-            ret['_comment'] = 'Registry not updated.'
+            if not latest:
+                ret['_comment'] = 'Software not found in the registry.\n' \
+                                  'Could be a problem with the Software\n' \
+                                  'definition file. Verify the full_name\n' \
+                                  'and the version match the registry ' \
+                                  'exactly.\n' \
+                                  'Failed after {0} tries.'.format(tries)
 
     # Compare the software list before and after
     # Add the difference to ret
@@ -811,6 +843,9 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
         else:
             version_num = version
 
+        if 'latest' in pkginfo and version_num not in pkginfo:
+            version_num = 'latest'
+
         # Check to see if package is installed on the system
         if target not in old:
             log.error('{0} {1} not installed'.format(target, version))
@@ -818,7 +853,8 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
             continue
         else:
             if not version_num == old.get(target) \
-                    and not old.get(target) == "Not Found":
+                    and not old.get(target) == "Not Found" \
+                    and not version_num == 'latest':
                 log.error('{0} {1} not installed'.format(target, version))
                 ret[target] = {'current': '{0} not installed'.format(version_num)}
                 continue

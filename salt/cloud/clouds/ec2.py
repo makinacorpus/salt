@@ -190,33 +190,6 @@ def __virtual__():
     if get_dependencies() is False:
         return False
 
-    for provider, details in six.iteritems(__opts__['providers']):
-        if 'ec2' not in details:
-            continue
-
-        parameters = details['ec2']
-
-        if not os.path.exists(parameters['private_key']):
-            raise SaltCloudException(
-                'The EC2 key file {0!r} used in the {1!r} provider '
-                'configuration does not exist\n'.format(
-                    parameters['private_key'],
-                    provider
-                )
-            )
-
-        key_mode = str(
-            oct(stat.S_IMODE(os.stat(parameters['private_key']).st_mode))
-        )
-        if key_mode not in ('0400', '0600'):
-            raise SaltCloudException(
-                'The EC2 key file {0!r} used in the {1!r} provider '
-                'configuration needs to be set to mode 0400 or 0600\n'.format(
-                    parameters['private_key'],
-                    provider
-                )
-            )
-
     return __virtualname__
 
 
@@ -227,7 +200,7 @@ def get_configured_provider():
     return config.is_provider_configured(
         __opts__,
         __active_provider_name__ or __virtualname__,
-        ('id', 'key', 'keyname', 'private_key')
+        ('id', 'key')
     )
 
 
@@ -1272,6 +1245,15 @@ def _create_eni_if_necessary(interface, vm_):
         if k in interface:
             params.update(_param_from_config(k, interface[k]))
 
+    if 'AssociatePublicIpAddress' in interface:
+        # Associating a public address in a VPC only works when the interface is not
+        # created beforehand, but as a part of the machine creation request.
+        for k in ('DeviceIndex', 'AssociatePublicIpAddress', 'NetworkInterfaceId'):
+            if k in interface:
+                params[k] = interface[k]
+        params['DeleteOnTermination'] = interface.get('delete_interface_on_terminate', True)
+        return params
+
     params['Action'] = 'CreateNetworkInterface'
 
     result = aws.query(params,
@@ -1773,14 +1755,17 @@ def request_instance(vm_=None, call=None):
         # pull the root device name from the result and use it when
         # launching the new VM
         rd_name = None
+        rd_type = None
         if 'blockDeviceMapping' in rd_data[0]:
-            if rd_data[0]['blockDeviceMapping'] is None:
-                # Some ami instances do not have a root volume. Ignore such cases
-                rd_name = None
-            elif isinstance(rd_data[0]['blockDeviceMapping']['item'], list):
-                rd_name = rd_data[0]['blockDeviceMapping']['item'][0]['deviceName']
-            else:
-                rd_name = rd_data[0]['blockDeviceMapping']['item']['deviceName']
+            # Some ami instances do not have a root volume. Ignore such cases
+            if rd_data[0]['blockDeviceMapping'] is not None:
+                item = rd_data[0]['blockDeviceMapping']['item']
+                if isinstance(item, list):
+                    item = item[0]
+                rd_name = item['deviceName']
+                # Grab the volume type
+                rd_type = item['ebs'].get('volumeType', None)
+
             log.info('Found root device name: {0}'.format(rd_name))
 
         if rd_name is not None:
@@ -1792,21 +1777,25 @@ def request_instance(vm_=None, call=None):
                 dev_list = []
 
             if rd_name in dev_list:
+                # Device already listed, just grab the index
                 dev_index = dev_list.index(rd_name)
-                termination_key = '{0}BlockDeviceMapping.{1}.Ebs.DeleteOnTermination'.format(spot_prefix, dev_index)
-                params[termination_key] = str(set_del_root_vol_on_destroy).lower()
             else:
                 dev_index = len(dev_list)
+                # Add the device name in since it wasn't already there
                 params[
                     '{0}BlockDeviceMapping.{1}.DeviceName'.format(
                         spot_prefix, dev_index
                     )
                 ] = rd_name
-                params[
-                    '{0}BlockDeviceMapping.{1}.Ebs.DeleteOnTermination'.format(
-                        spot_prefix, dev_index
-                    )
-                ] = str(set_del_root_vol_on_destroy).lower()
+
+            # Set the termination value
+            termination_key = '{0}BlockDeviceMapping.{1}.Ebs.DeleteOnTermination'.format(spot_prefix, dev_index)
+            params[termination_key] = str(set_del_root_vol_on_destroy).lower()
+
+            # Preserve the volume type if specified
+            if rd_type is not None:
+                type_key = '{0}BlockDeviceMapping.{1}.Ebs.VolumeType'.format(spot_prefix, dev_index)
+                params[type_key] = rd_type
 
     set_del_all_vols_on_destroy = config.get_cloud_config_value(
         'del_all_vols_on_destroy', vm_, __opts__, search_global=False, default=False
@@ -2306,7 +2295,8 @@ def create(vm_=None, call=None):
         # Check for required profile parameters before sending any API calls.
         if vm_['profile'] and config.is_profile_configured(__opts__,
                                                            __active_provider_name__ or 'ec2',
-                                                           vm_['profile']) is False:
+                                                           vm_['profile'],
+                                                           vm_=vm_) is False:
             return False
     except AttributeError:
         pass
@@ -2315,6 +2305,43 @@ def create(vm_=None, call=None):
     # to use driver: "driver: <provider-engine>"
     if 'provider' in vm_:
         vm_['driver'] = vm_.pop('provider')
+
+    # Check for private_key and keyfile name for bootstrapping new instances
+    deploy = config.get_cloud_config_value(
+        'deploy', vm_, __opts__, default=True
+    )
+    win_password = config.get_cloud_config_value(
+        'win_password', vm_, __opts__, default=''
+    )
+    key_filename = config.get_cloud_config_value(
+        'private_key', vm_, __opts__, search_global=False, default=None
+    )
+    if deploy or (deploy and win_password == 'auto'):
+        # The private_key and keyname settings are only needed for bootstrapping
+        # new instances when deploy is True, or when win_password is set to 'auto'
+        # and deploy is also True.
+        if key_filename is None:
+            raise SaltCloudSystemExit(
+                'The required \'private_key\' configuration setting is missing from the '
+                '\'ec2\' driver.'
+            )
+
+        if not os.path.exists(key_filename):
+            raise SaltCloudSystemExit(
+                'The EC2 key file {0!r} does not exist.\n'.format(
+                    key_filename
+                )
+            )
+
+        key_mode = str(
+            oct(stat.S_IMODE(os.stat(key_filename).st_mode))
+        )
+        if key_mode not in ('0400', '0600'):
+            raise SaltCloudSystemExit(
+                'The EC2 key file {0!r} needs to be set to mode 0400 or 0600.\n'.format(
+                    key_filename
+                )
+            )
 
     salt.utils.cloud.fire_event(
         'event',
@@ -2331,15 +2358,6 @@ def create(vm_=None, call=None):
         vm_['name'], vm_['profile'], 'ec2', vm_['driver']
     )
 
-    key_filename = config.get_cloud_config_value(
-        'private_key', vm_, __opts__, search_global=False, default=None
-    )
-    if key_filename is not None and not os.path.isfile(key_filename):
-        raise SaltCloudConfigError(
-            'The defined key_filename {0!r} does not exist'.format(
-                key_filename
-            )
-        )
     vm_['key_filename'] = key_filename
     # wait_for_instance requires private_key
     vm_['private_key'] = key_filename
@@ -2376,6 +2394,12 @@ def create(vm_=None, call=None):
     else:
         # Put together all of the information required to request the instance,
         # and then fire off the request for it
+        if keyname(vm_) is None:
+            raise SaltCloudSystemExit(
+                'The required \'keyname\' configuration setting is missing from the '
+                '\'ec2\' driver.'
+            )
+
         data, vm_ = request_instance(vm_, location)
 
         # If data is a str, it's an error
@@ -2469,8 +2493,7 @@ def create(vm_=None, call=None):
         log.debug('Salt interface set to: {0}'.format(salt_ip_address))
     vm_['salt_host'] = salt_ip_address
 
-    if config.get_cloud_config_value(
-            'deploy', vm_, __opts__, default=True):
+    if deploy:
         display_ssh_output = config.get_cloud_config_value(
             'display_ssh_output', vm_, __opts__, default=True
         )
@@ -2589,15 +2612,20 @@ def create_attach_volumes(name, kwargs, call=None, wait_to_finish=True):
             volume_dict['volume_id'] = volume['volume_id']
         elif 'snapshot' in volume:
             volume_dict['snapshot'] = volume['snapshot']
-        else:
+        elif 'size' in volume:
             volume_dict['size'] = volume['size']
+        else:
+            raise SaltCloudConfigError(
+                'Cannot create volume.  Please define one of \'volume_id\', '
+                '\'snapshot\', or \'size\''
+            )
 
-            if 'type' in volume:
-                volume_dict['type'] = volume['type']
-            if 'iops' in volume:
-                volume_dict['iops'] = volume['iops']
-            if 'encrypted' in volume:
-                volume_dict['encrypted'] = volume['encrypted']
+        if 'type' in volume:
+            volume_dict['type'] = volume['type']
+        if 'iops' in volume:
+            volume_dict['iops'] = volume['iops']
+        if 'encrypted' in volume:
+            volume_dict['encrypted'] = volume['encrypted']
 
         if 'volume_id' not in volume_dict:
             created_volume = create_volume(volume_dict, call='function', wait_to_finish=wait_to_finish)
@@ -3104,7 +3132,7 @@ def _get_node(name=None, instance_id=None, location=None):
 
     params = {'Action': 'DescribeInstances'}
 
-    if str(name).startswith('i-') and len(name) == 10:
+    if str(name).startswith('i-') and (len(name) == 10 or len(name) == 19):
         instance_id = name
 
     if instance_id:
@@ -3653,7 +3681,8 @@ def create_volume(kwargs=None, call=None, wait_to_finish=False):
     if 'iops' in kwargs and kwargs.get('type', 'standard') == 'io1':
         params['Iops'] = kwargs['iops']
 
-    if 'encrypted' in kwargs:
+    # You can't set `encrypted` if you pass a snapshot
+    if 'encrypted' in kwargs and 'snapshot' not in kwargs:
         params['Encrypted'] = kwargs['encrypted']
 
     log.debug(params)

@@ -1099,7 +1099,7 @@ def comment_line(path,
     path = os.path.realpath(os.path.expanduser(path))
 
     # Make sure the file exists
-    if not os.path.exists(path):
+    if not os.path.isfile(path):
         raise SaltInvocationError('File not found: {0}'.format(path))
 
     # Make sure it is a text file
@@ -1140,6 +1140,11 @@ def comment_line(path,
     # We've searched the whole file. If we didn't find anything, return False
     if not found:
         return False
+
+    if not salt.utils.is_windows():
+        pre_user = get_user(path)
+        pre_group = get_group(path)
+        pre_mode = __salt__['config.manage_mode'](get_mode(path))
 
     # Create a copy to read from and to use as a backup later
     try:
@@ -1192,6 +1197,9 @@ def comment_line(path,
             "backup file '{1}'. "
             "Exception: {2}".format(path, temp_file, exc)
         )
+
+    if not salt.utils.is_windows():
+        check_perms(path, None, pre_user, pre_group, pre_mode)
 
     # Return a diff using the two dictionaries
     return ''.join(difflib.unified_diff(orig_file, new_file))
@@ -1468,9 +1476,9 @@ def line(path, content, match=None, mode=None, location=None,
         salt '*' file.line /etc/nsswitch.conf "networks:\tfiles dns", after="hosts:.*?", mode='ensure'
     '''
     path = os.path.realpath(os.path.expanduser(path))
-    if not os.path.exists(path):
+    if not os.path.isfile(path):
         if not quiet:
-            raise CommandExecutionError('File "{0}" does not exists.'.format(path))
+            raise CommandExecutionError('File "{0}" does not exists or is not a file.'.format(path))
         return False  # No changes had happened
 
     mode = mode and mode.lower() or mode
@@ -1625,7 +1633,7 @@ def line(path, content, match=None, mode=None, location=None,
 
     if changed:
         if show_changes:
-            changes_diff = ''.join(difflib.unified_diff(salt.utils.fopen(path, 'r').readlines(), body.splitlines()))
+            changes_diff = ''.join(difflib.unified_diff(salt.utils.fopen(path, 'r').read().splitlines(), body.splitlines()))
         fh_ = None
         try:
             fh_ = salt.utils.atomicfile.atomic_open(path, 'w')
@@ -2739,7 +2747,7 @@ def link(src, path):
 
 def is_link(path):
     '''
-    Check if the path is a symlink
+    Check if the path is a symbolic link
 
     CLI Example:
 
@@ -2757,7 +2765,7 @@ def is_link(path):
 
 def symlink(src, path):
     '''
-    Create a symbolic link to a file
+    Create a symbolic link (symlink, soft link) to a file
 
     CLI Example:
 

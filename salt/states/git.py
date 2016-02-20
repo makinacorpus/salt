@@ -5,6 +5,10 @@ States to manage git repositories and git configuration
 .. important::
     Before using git over ssh, make sure your remote host fingerprint exists in
     your ``~/.ssh/known_hosts`` file.
+
+.. versionchanged:: 2015.8.8
+    This state module now requires git 1.6.5 (released 10 October 2009) or
+    newer.
 '''
 from __future__ import absolute_import
 
@@ -29,7 +33,10 @@ def __virtual__():
     '''
     Only load if git is available
     '''
-    return __salt__['cmd.has_exec']('git')
+    if 'git.version' not in __salt__:
+        return False
+    git_ver = _LooseVersion(__salt__['git.version'](versioninfo=False))
+    return git_ver >= _LooseVersion('1.6.5')
 
 
 def _revs_equal(rev1, rev2, rev_type):
@@ -121,6 +128,20 @@ def _fail(ret, msg, comments=None):
         msg += _format_comments(comments)
     ret['comment'] = msg
     return ret
+
+
+def _failed_fetch(ret, exc, comments=None):
+    msg = (
+        'Fetch failed. Set \'force_fetch\' to True to force the fetch if the '
+        'failure was due to it being non-fast-forward. Output of the fetch '
+        'command follows:\n\n{0}'.format(_strip_exc(exc))
+    )
+    return _fail(ret, msg, comments)
+
+
+def _failed_submodule_update(ret, exc, comments=None):
+    msg = 'Failed to update submodules: ' + _strip_exc(exc)
+    return _fail(ret, msg, comments)
 
 
 def _not_fast_forward(ret, pre, post, branch, local_branch, comments):
@@ -274,7 +295,42 @@ def latest(name,
         with tags or revision IDs.
 
     identity
-        A path on the minion server to a private key to use over SSH
+        Path to a private key to use for ssh URLs. This can be either a single
+        string, or a list of strings. For example:
+
+        .. code-block:: yaml
+
+            # Single key
+            git@github.com:user/repo.git:
+              git.latest:
+                - user: deployer
+                - identity: /home/deployer/.ssh/id_rsa
+
+            # Two keys
+            git@github.com:user/repo.git:
+              git.latest:
+                - user: deployer
+                - identity:
+                  - /home/deployer/.ssh/id_rsa
+                  - /home/deployer/.ssh/id_rsa_alternate
+
+        If multiple keys are specified, they will be tried one-by-one in order
+        for each git command which needs to authenticate.
+
+        .. warning::
+
+            Unless Salt is invoked from the minion using ``salt-call``, the
+            key(s) must be passphraseless. For greater security with
+            passphraseless private keys, see the `sshd(8)`_ manpage for
+            information on securing the keypair from the remote side in the
+            ``authorized_keys`` file.
+
+            .. _`sshd(8)`: http://www.man7.org/linux/man-pages/man8/sshd.8.html#AUTHORIZED_KEYS_FILE%20FORMAT
+
+        .. versionchanged:: 2015.8.7
+            Salt will no longer attempt to use passphrase-protected keys unless
+            invoked from the minion using ``salt-call``, to prevent blocking
+            waiting for user input.
 
     https_user
         HTTP Basic Auth username for HTTPS (only) clones
@@ -930,8 +986,16 @@ def latest(name,
                     )
                     branch_opts = [set_upstream, desired_upstream]
                 elif upstream and desired_upstream is False:
-                    upstream_action = 'Tracking branch was unset'
-                    branch_opts = ['--unset-upstream']
+                    # If the remote_rev is a tag or SHA1, and there is an
+                    # upstream tracking branch, we will unset it. However, we
+                    # can only do this if the git version is 1.8.0 or newer, as
+                    # the --unset-upstream option was not added until that
+                    # version.
+                    if git_ver >= _LooseVersion('1.8.0'):
+                        upstream_action = 'Tracking branch was unset'
+                        branch_opts = ['--unset-upstream']
+                    else:
+                        branch_opts = None
                 elif desired_upstream and upstream != desired_upstream:
                     upstream_action = (
                         'Tracking branch was updated to {0}'.format(
@@ -952,18 +1016,7 @@ def latest(name,
                             user=user,
                             identity=identity)
                     except CommandExecutionError as exc:
-                        msg = 'Fetch failed'
-                        if isinstance(exc, CommandExecutionError):
-                            msg += (
-                                '. Set \'force_fetch\' to True to force '
-                                'the fetch if the failure was due to it '
-                                'bein non-fast-forward. Output of the '
-                                'fetch command follows:\n\n'
-                            )
-                            msg += _strip_exc(exc)
-                        else:
-                            msg += ':\n\n' + str(exc)
-                        return _fail(ret, msg, comments)
+                        return _failed_fetch(ret, exc, comments)
                     else:
                         if fetch_changes:
                             comments.append(
@@ -1084,10 +1137,24 @@ def latest(name,
                                                         ignore_retcode=True):
                             merge_rev = remote_rev if rev == 'HEAD' \
                                 else desired_upstream
+
+                            if git_ver >= _LooseVersion('1.8.1.6'):
+                                # --ff-only added in version 1.8.1.6. It's not
+                                # 100% necessary, but if we can use it, we'll
+                                # ensure that the merge doesn't go through if
+                                # not a fast-forward. Granted, the logic that
+                                # gets us to this point shouldn't allow us to
+                                # attempt this merge if it's not a
+                                # fast-forward, but it's an extra layer of
+                                # protection.
+                                merge_opts = ['--ff-only']
+                            else:
+                                merge_opts = []
+
                             __salt__['git.merge'](
                                 target,
                                 rev=merge_rev,
-                                opts=['--ff-only'],
+                                opts=merge_opts,
                                 user=user
                             )
                             comments.append(
@@ -1117,11 +1184,15 @@ def latest(name,
                 # TODO: Figure out how to add submodule update info to
                 # test=True return data, and changes dict.
                 if submodules:
-                    __salt__['git.submodule'](target,
-                                              'update',
-                                              opts=['--init', '--recursive'],
-                                              user=user,
-                                              identity=identity)
+                    try:
+                        __salt__['git.submodule'](
+                            target,
+                            'update',
+                            opts=['--init', '--recursive'],
+                            user=user,
+                            identity=identity)
+                    except CommandExecutionError as exc:
+                        return _failed_submodule_update(ret, exc, comments)
             elif bare:
                 if __opts__['test']:
                     msg = (
@@ -1141,18 +1212,7 @@ def latest(name,
                         user=user,
                         identity=identity)
                 except CommandExecutionError as exc:
-                    msg = 'Fetch failed'
-                    if isinstance(exc, CommandExecutionError):
-                        msg += (
-                            '. Set \'force_fetch\' to True to force '
-                            'the fetch if the failure was due to it '
-                            'bein non-fast-forward. Output of the '
-                            'fetch command follows:\n\n'
-                        )
-                        msg += _strip_exc(exc)
-                    else:
-                        msg += ':\n\n' + str(exc)
-                    return _fail(ret, msg, comments)
+                    return _failed_fetch(ret, exc, comments)
                 else:
                     comments.append(
                         'Bare repository at {0} was fetched{1}'.format(
@@ -1260,13 +1320,18 @@ def latest(name,
             # We're cloning a fresh repo, there is no local branch or revision
             local_branch = local_rev = None
 
-            __salt__['git.clone'](target,
-                                  name,
-                                  user=user,
-                                  opts=clone_opts,
-                                  identity=identity,
-                                  https_user=https_user,
-                                  https_pass=https_pass)
+            try:
+                __salt__['git.clone'](target,
+                                      name,
+                                      user=user,
+                                      opts=clone_opts,
+                                      identity=identity,
+                                      https_user=https_user,
+                                      https_pass=https_pass)
+            except CommandExecutionError as exc:
+                msg = 'Clone failed: {0}'.format(_strip_exc(exc))
+                return _fail(ret, msg, comments)
+
             ret['changes']['new'] = name + ' => ' + target
             comments.append(
                 '{0} cloned to {1}{2}'.format(
@@ -1355,8 +1420,16 @@ def latest(name,
                         )
                         branch_opts = [set_upstream, desired_upstream]
                     elif upstream and desired_upstream is False:
-                        upstream_action = 'Tracking branch was unset'
-                        branch_opts = ['--unset-upstream']
+                        # If the remote_rev is a tag or SHA1, and there is an
+                        # upstream tracking branch, we will unset it. However,
+                        # we can only do this if the git version is 1.8.0 or
+                        # newer, as the --unset-upstream option was not added
+                        # until that version.
+                        if git_ver >= _LooseVersion('1.8.0'):
+                            upstream_action = 'Tracking branch was unset'
+                            branch_opts = ['--unset-upstream']
+                        else:
+                            branch_opts = None
                     elif desired_upstream and upstream != desired_upstream:
                         upstream_action = (
                             'Tracking branch was updated to {0}'.format(
@@ -1376,11 +1449,14 @@ def latest(name,
                         comments.append(upstream_action)
 
             if submodules and remote_rev:
-                __salt__['git.submodule'](target,
-                                          'update',
-                                          opts=['--init', '--recursive'],
-                                          user=user,
-                                          identity=identity)
+                try:
+                    __salt__['git.submodule'](target,
+                                              'update',
+                                              opts=['--init', '--recursive'],
+                                              user=user,
+                                              identity=identity)
+                except CommandExecutionError as exc:
+                    return _failed_submodule_update(ret, exc, comments)
 
             try:
                 new_rev = __salt__['git.revision'](
