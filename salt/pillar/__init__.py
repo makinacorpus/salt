@@ -650,7 +650,8 @@ class Pillar(object):
         if errors is None:
             errors = []
         pillar = copy.copy(self.pillar_override)
-        errors = []
+        if errors is None:
+            errors = []
         for saltenv, pstates in six.iteritems(matches):
             mods = set()
             for sls in pstates:
