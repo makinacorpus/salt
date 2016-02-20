@@ -642,13 +642,14 @@ class Pillar(object):
                                     errors += err
         return state, mods, errors
 
-    def render_pillar(self, matches):
+    def render_pillar(self, matches, errors=None):
         '''
         Extract the sls pillar files from the matches and render them into the
         pillar
         '''
         pillar = copy.copy(self.pillar_override)
-        errors = []
+        if errors is None:
+            errors = []
         for saltenv, pstates in six.iteritems(matches):
             mods = set()
             for sls in pstates:
@@ -708,7 +709,7 @@ class Pillar(object):
                                             val)
         return ext
 
-    def ext_pillar(self, pillar, pillar_dirs):
+    def ext_pillar(self, pillar, pillar_dirs, errors=None):
         '''
         Render the external pillar data
         '''
@@ -718,6 +719,8 @@ class Pillar(object):
             log.critical('The "ext_pillar" option is malformed')
             return pillar
         ext = None
+        if errors is None:
+            errors = []
         # Bring in CLI pillar data
         pillar.update(self.pillar_override)
         for run in self.opts['ext_pillar']:
@@ -749,12 +752,8 @@ class Pillar(object):
                                                          pillar_dirs,
                                                          key)
                 except Exception as exc:
-                    log.exception(
-                            'Failed to load ext_pillar {0}: {1}'.format(
-                                key,
-                                exc
-                                )
-                            )
+                    errors.append('Failed to load ext_pillar {0}: {1}'.format(
+                        key, exc))
             if ext:
                 pillar = merge(
                     pillar,
@@ -763,7 +762,7 @@ class Pillar(object):
                     self.opts.get('renderer', 'yaml'),
                     self.opts.get('pillar_merge_lists', False))
                 ext = None
-        return pillar
+        return pillar, errors
 
     def compile_pillar(self, ext=True, pillar_dirs=None):
         '''
@@ -772,9 +771,9 @@ class Pillar(object):
         top, top_errors = self.get_top()
         if ext:
             if self.opts.get('ext_pillar_first', False):
-                self.opts['pillar'] = self.ext_pillar({}, pillar_dirs)
+                self.opts['pillar'], errors = self.ext_pillar({}, pillar_dirs)
                 matches = self.top_matches(top)
-                pillar, errors = self.render_pillar(matches)
+                pillar, errors = self.render_pillar(matches, errors=errors)
                 pillar = merge(pillar,
                                self.opts['pillar'],
                                self.merge_strategy,
@@ -783,7 +782,8 @@ class Pillar(object):
             else:
                 matches = self.top_matches(top)
                 pillar, errors = self.render_pillar(matches)
-                pillar = self.ext_pillar(pillar, pillar_dirs)
+                pillar, errors = self.ext_pillar(
+                    pillar, pillar_dirs, errors=errors)
         else:
             matches = self.top_matches(top)
             pillar, errors = self.render_pillar(matches)
