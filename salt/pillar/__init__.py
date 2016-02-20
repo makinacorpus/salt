@@ -716,10 +716,11 @@ class Pillar(object):
         Render the external pillar data
         '''
         if 'ext_pillar' not in self.opts:
-            return pillar
+            return pillar, errors
         if not isinstance(self.opts['ext_pillar'], list):
-            log.critical('The "ext_pillar" option is malformed')
-            return pillar
+            errors.append('The "ext_pillar" option is malformed')
+            log.critical(errors[-1])
+            return pillar, errors
         ext = None
         if errors is None:
             errors = []
@@ -727,8 +728,9 @@ class Pillar(object):
         pillar.update(self.pillar_override)
         for run in self.opts['ext_pillar']:
             if not isinstance(run, dict):
-                log.critical('The "ext_pillar" option is malformed')
-                return {}
+                errors.append('The "ext_pillar" option is malformed')
+                log.critical(errors[-1])
+                return {}, errors
             for key, val in six.iteritems(run):
                 if key not in self.ext_pillars:
                     err = ('Specified ext_pillar interface {0} is '
