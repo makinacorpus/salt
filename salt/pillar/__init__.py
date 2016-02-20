@@ -715,6 +715,8 @@ class Pillar(object):
         '''
         Render the external pillar data
         '''
+        if errors is None:
+            errors = []
         if 'ext_pillar' not in self.opts:
             return pillar, errors
         if not isinstance(self.opts['ext_pillar'], list):
@@ -722,8 +724,6 @@ class Pillar(object):
             log.critical(errors[-1])
             return pillar, errors
         ext = None
-        if errors is None:
-            errors = []
         # Bring in CLI pillar data
         pillar.update(self.pillar_override)
         for run in self.opts['ext_pillar']:
