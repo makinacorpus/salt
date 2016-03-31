@@ -107,6 +107,8 @@ to manage the minion's master setting from an execution module. By simply
 changing the algorithm in the module to return a new master ip/fqdn, restart
 the minion and it will connect to the new master.
 
+.. conf_minion:: master_alive_interval
+
 ``master_alive_interval``
 -------------------------
 
@@ -117,6 +119,8 @@ the minion and it will connect to the new master.
 Configures how often, in seconds, the minion will verify that the current
 master is alive and responding.  The minion will try to establish a connection
 to the next master in the list if it finds the existing one is dead.
+
+.. conf_minion:: master_shuffle
 
 ``master_shuffle``
 ------------------
@@ -133,8 +137,10 @@ Python's :func:`random.shuffle <python2:random.shuffle>` method.
 
     master_shuffle: True
 
+.. conf_minion:: random_master
+
 ``random_master``
-------------------
+-----------------
 
 Default: ``False``
 
@@ -149,7 +155,7 @@ Python's :func:`random.randint <python2:random.randint>` method.
 .. conf_minion:: retry_dns
 
 ``retry_dns``
----------------
+-------------
 
 Default: ``30``
 
@@ -331,10 +337,10 @@ Verify and set permissions on configuration directories at startup.
 
 .. note::
 
-    When marked as True the verify_env option requires WRITE access to the
+    When set to ``True`` the verify_env option requires WRITE access to the
     configuration directory (/etc/salt/). In certain situations such as
-    mounting /etc/salt/ as read-only for templating this will create a
-    stack trace when state.highstate is called.
+    mounting /etc/salt/ as read-only for templating this will create a stack
+    trace when :py:func:`state.apply <salt.modules.state.apply_>` is called.
 
 .. conf_minion:: cache_jobs
 
@@ -578,6 +584,23 @@ Pull port used when :conf_minion:`ipc_mode` is set to ``tcp``.
 
     tcp_pull_port: 4511
 
+.. conf_minion:: transport
+
+``transport``
+-------------
+
+Default: ``zeromq``
+
+Changes the underlying transport layer. ZeroMQ is the recommended transport
+while additional transport layers are under development. Supported values are
+``zeromq``, ``raet`` (experimental), and ``tcp`` (experimental). This setting has
+a significant impact on performance and should not be changed unless you know
+what you are doing! Transports are explained in :ref:`Salt Transports
+<transports>`.
+
+.. code-block:: yaml
+
+    transport: zeromq
 
 
 Minion Module Management
@@ -905,6 +928,9 @@ sha512 are also supported.
 
     hash_type: md5
 
+Pillar Settings
+===============
+
 .. conf_minion:: pillar_roots
 
 ``pillar_roots``
@@ -930,7 +956,19 @@ the pillar environments.
       prod:
         - /srv/pillar/prod
 
+.. conf_minion:: pillarenv
 
+``pillarenv``
+-------------
+
+Default: ``None``
+
+Isolates the pillar environment on the minion side. This functions the same as
+the environment setting, but for pillar instead of states.
+
+.. code-block:: yaml
+
+    pillarenv: None
 
 Security Settings
 =================

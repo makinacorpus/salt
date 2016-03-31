@@ -400,7 +400,7 @@ VALID_CREATE_OPTS = {
     'memory_swap': {
         'api_name': 'memswap_limit',
         'path': 'HostConfig:MemorySwap',
-        'default': 0,
+        'get_default_from_container': True,
     },
     'mac_address': {
         'validator': 'string',
@@ -443,6 +443,7 @@ VALID_CREATE_OPTS = {
     },
     'labels': {
       'path': 'Config:Labels',
+      'image_path': 'Config:Labels',
       'default': {},
     },
     'binds': {
@@ -524,15 +525,14 @@ def __virtual__():
     Only load if docker libs are present
     '''
     if HAS_DOCKER_PY:
-        try:
-            docker_py_versioninfo = _get_docker_py_versioninfo()
-        except CommandExecutionError:
-            docker_py_versioninfo = None
+        docker_py_versioninfo = _get_docker_py_versioninfo()
 
         # Don't let a failure to interpret the version keep this module from
         # loading. Log a warning (log happens in _get_docker_py_versioninfo()).
-        if docker_py_versioninfo is None \
-                or docker_py_versioninfo >= MIN_DOCKER_PY:
+        if docker_py_versioninfo is None:
+            return (False, 'Docker module found, but no version could be'
+                    ' extracted')
+        if docker_py_versioninfo >= MIN_DOCKER_PY:
             try:
                 docker_versioninfo = version().get('VersionInfo')
             except CommandExecutionError:
@@ -546,20 +546,22 @@ def __virtual__():
                     '{0}, installed: {1})'.format(
                         '.'.join(map(str, MIN_DOCKER)),
                         '.'.join(map(str, docker_versioninfo))))
-        else:
-            return (False,
-                'Insufficient docker-py version for dockerng (required: '
-                '{0}, installed: {1})'.format(
-                    '.'.join(map(str, MIN_DOCKER_PY)),
-                    '.'.join(map(str, docker_py_versioninfo))))
+        return (False,
+            'Insufficient docker-py version for dockerng (required: '
+            '{0}, installed: {1})'.format(
+                '.'.join(map(str, MIN_DOCKER_PY)),
+                '.'.join(map(str, docker_py_versioninfo))))
     return (False, 'Docker module could not get imported')
 
 
 def _get_docker_py_versioninfo():
     '''
-    Returns a version_info tuple for docker-py
+    Returns the version_info tuple from docker-py
     '''
-    return docker.version_info
+    try:
+        return docker.version_info
+    except AttributeError:
+        pass
 
 
 # Decorators
@@ -1221,7 +1223,7 @@ def _validate_input(kwargs,
             kwargs['memory_swap'] = \
                 salt.utils.human_size_to_bytes(kwargs['memory_swap'])
         except ValueError:
-            if kwargs['memory_swap'] in -1:
+            if kwargs['memory_swap'] == -1:
                 # memory_swap of -1 means swap is disabled
                 return
             raise SaltInvocationError(

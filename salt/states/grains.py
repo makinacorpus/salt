@@ -128,14 +128,12 @@ def list_present(name, value, delimiter=DEFAULT_TARGET_DELIM):
               - web
               - dev
     '''
-
     name = re.sub(delimiter, DEFAULT_TARGET_DELIM, name)
     ret = {'name': name,
            'changes': {},
            'result': True,
            'comment': ''}
     grain = __salt__['grains.get'](name)
-
     if grain:
         # check whether grain is a list
         if not isinstance(grain, list):
@@ -146,6 +144,17 @@ def list_present(name, value, delimiter=DEFAULT_TARGET_DELIM):
             if set(value).issubset(set(__salt__['grains.get'](name))):
                 ret['comment'] = 'Value {1} is already in grain {0}'.format(name, value)
                 return ret
+            elif name in __context__.get('pending_grains', {}):
+                # elements common to both
+                intersection = set(value).intersection(__context__.get('pending_grains', {})[name])
+                if intersection:
+                    value = list(set(value).difference(__context__['pending_grains'][name]))
+                    ret['comment'] = 'Removed value {0} from update due to context found in "{1}".\n'.format(value, name)
+            if 'pending_grains' not in __context__:
+                __context__['pending_grains'] = {}
+            if name not in __context__['pending_grains']:
+                __context__['pending_grains'][name] = set()
+            __context__['pending_grains'][name].update(value)
         else:
             if value in grain:
                 ret['comment'] = 'Value {1} is already in grain {0}'.format(name, value)
@@ -217,27 +226,36 @@ def list_absent(name, value, delimiter=DEFAULT_TARGET_DELIM):
            'changes': {},
            'result': True,
            'comment': ''}
+    comments = []
     grain = __salt__['grains.get'](name, None)
     if grain:
         if isinstance(grain, list):
-            if value not in grain:
-                ret['comment'] = 'Value {1} is absent from grain {0}' \
-                                 .format(name, value)
-                return ret
-            if __opts__['test']:
-                ret['result'] = None
-                ret['comment'] = 'Value {1} in grain {0} is set to ' \
-                                 'be deleted'.format(name, value)
-                ret['changes'] = {'deleted': value}
-                return ret
-            __salt__['grains.remove'](name, value)
-            ret['comment'] = 'Value {1} was deleted from grain {0}'\
-                .format(name, value)
-            ret['changes'] = {'deleted': value}
+            if not isinstance(value, list):
+                value = [value]
+            for val in value:
+                if val not in grain:
+                    comments.append('Value {1} is absent from '
+                                      'grain {0}'.format(name, val))
+                elif __opts__['test']:
+                    ret['result'] = None
+                    comments.append('Value {1} in grain {0} is set '
+                                     'to be deleted'.format(name, val))
+                    if 'deleted' not in ret['changes'].keys():
+                        ret['changes'] = {'deleted': []}
+                    ret['changes']['deleted'].append(val)
+                elif val in grain:
+                    __salt__['grains.remove'](name, val)
+                    comments.append('Value {1} was deleted from '
+                                     'grain {0}'.format(name, val))
+                    if 'deleted' not in ret['changes'].keys():
+                        ret['changes'] = {'deleted': []}
+                    ret['changes']['deleted'].append(val)
+            ret['comment'] = '\n'.join(comments)
+            return ret
         else:
             ret['result'] = False
             ret['comment'] = 'Grain {0} is not a valid list'\
-                .format(name)
+                             .format(name)
     else:
         ret['comment'] = 'Grain {0} does not exist'.format(name)
     return ret

@@ -56,7 +56,8 @@ def state(
         fail_minions=None,
         allow_fail=0,
         concurrent=False,
-        timeout=None):
+        timeout=None,
+        queue=False):
     '''
     Invoke a state run on a given target
 
@@ -116,6 +117,9 @@ def state(
         WARNING: This flag is potentially dangerous. It is designed
         for use when multiple state runs can safely be run at the same
         Do not use this flag for performance optimization.
+
+    queue
+        Pass ``queue=true`` through to the state function
 
     Examples:
 
@@ -205,6 +209,7 @@ def state(
         cmd_kw['kwarg']['pillar'] = pillar
 
     cmd_kw['kwarg']['saltenv'] = __env__
+    cmd_kw['kwarg']['queue'] = queue
 
     if isinstance(concurrent, bool):
         cmd_kw['kwarg']['concurrent'] = concurrent
@@ -256,11 +261,15 @@ def state(
                 fail.add(minion)
             failures[minion] = m_ret or 'Minion did not respond'
             continue
-        for state_item in six.itervalues(m_ret):
-            if state_item['changes']:
-                changes[minion] = m_ret
-                break
-        else:
+        try:
+            for state_item in six.itervalues(m_ret):
+                if 'changes' in state_item and state_item['changes']:
+                    changes[minion] = m_ret
+                    break
+            else:
+                no_change.add(minion)
+        except AttributeError:
+            log.error("m_ret did not have changes %s %s", type(m_ret), m_ret)
             no_change.add(minion)
 
     if changes:

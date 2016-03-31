@@ -1414,23 +1414,23 @@ def line(path, content, match=None, mode=None, location=None,
         a fragment of a string or regular expression.
 
     :param mode:
-        Ensure
+        :Ensure:
             If line does not exist, it will be added.
 
-        Replace
+        :Replace:
             If line already exist, it will be replaced.
 
-        Delete
+        :Delete:
             Delete the line, once found.
 
-        Insert
+        :Insert:
             Insert a line.
 
     :param location:
-        start
+        :start:
             Place the content at the beginning of the file.
 
-        end
+        :end:
             Place the content at the end of the file.
 
     :param before:
@@ -1439,25 +1439,24 @@ def line(path, content, match=None, mode=None, location=None,
     :param after:
         Regular expression or an exact case-sensitive fragment of the string.
 
-    :param show_changes
+    :param show_changes:
         Output a unified diff of the old file and the new file.
         If ``False`` return a boolean if any changes were made.
         Default is ``True``
 
         .. note::
-
             Using this option will store two copies of the file in-memory
             (the original version and the edited version) in order to generate the diff.
 
-    :param backup
+    :param backup:
         Create a backup of the original file with the extension:
         "Year-Month-Day-Hour-Minutes-Seconds".
 
-    :param quiet
+    :param quiet:
         Do not raise any exceptions. E.g. ignore the fact that the file that is
         tried to be edited does not exist and nothing really happened.
 
-    :param indent
+    :param indent:
         Keep indentation with the previous line.
 
     If an equal sign (``=``) appears in an argument to a Salt command, it is
@@ -2838,6 +2837,9 @@ def copy(src, dst, recurse=False, remove_existing=False):
     if not os.path.isabs(src):
         raise SaltInvocationError('File path must be absolute.')
 
+    if not os.path.exists(src):
+        raise CommandExecutionError('No such file or directory \'{0}\''.format(src))
+
     if not salt.utils.is_windows():
         pre_user = get_user(src)
         pre_group = get_group(src)
@@ -3320,6 +3322,61 @@ def source_list(source, source_hash, saltenv):
             return ret
     else:
         return source, source_hash
+
+
+def apply_template_on_contents(
+        contents,
+        template,
+        context,
+        defaults,
+        saltenv):
+    '''
+    Return the contents after applying the templating engine
+
+    contents
+        template string
+
+    template
+        template format
+
+    context
+        Overrides default context variables passed to the template.
+
+    defaults
+        Default context passed to the template.
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt '*' file.apply_template_on_contents \\
+            contents='This is a {{ template }} string.' \\
+            template=jinja \\
+            "context={}" "defaults={'template': 'cool'}" \\
+            saltenv=base
+    '''
+    if template in salt.utils.templates.TEMPLATE_REGISTRY:
+        context_dict = defaults if defaults else {}
+        if context:
+            context_dict.update(context)
+        # Apply templating
+        contents = salt.utils.templates.TEMPLATE_REGISTRY[template](
+            contents,
+            from_str=True,
+            to_str=True,
+            context=context_dict,
+            saltenv=saltenv,
+            grains=__grains__,
+            pillar=__pillar__,
+            salt=__salt__,
+            opts=__opts__)['data'].encode('utf-8')
+    else:
+        ret = {}
+        ret['result'] = False
+        ret['comment'] = ('Specified template format {0} is not supported'
+                          ).format(template)
+        return ret
+    return contents
 
 
 def get_managed(
@@ -3863,6 +3920,7 @@ def check_file_meta(
                 salt.utils.fopen(name, 'r')) as (src, name_):
             slines = src.readlines()
             nlines = name_.readlines()
+        __clean_tmp(tmp)
         if ''.join(nlines) != ''.join(slines):
             if __salt__['config.option']('obfuscate_templates'):
                 changes['diff'] = '<Obfuscated Template>'

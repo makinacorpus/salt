@@ -553,7 +553,7 @@ class CkMinions(object):
 
         return list(minions)
 
-    def connected_ids(self, subset=None, show_ipv4=False):
+    def connected_ids(self, subset=None, show_ipv4=False, include_localhost=False):
         '''
         Return a set of all connected minion ids, optionally within a subset
         '''
@@ -580,7 +580,9 @@ class CkMinions(object):
                 except (AttributeError, IOError, OSError):
                     continue
                 for ipv4 in grains.get('ipv4', []):
-                    if ipv4 == '127.0.0.1' or ipv4 == '0.0.0.0':
+                    if ipv4 == '127.0.0.1' and not include_localhost:
+                        continue
+                    if ipv4 == '0.0.0.0':
                         continue
                     if ipv4 in addrs:
                         if show_ipv4:
@@ -644,14 +646,6 @@ class CkMinions(object):
                'E': 'pcre',
                'N': 'node',
                None: 'glob'}
-        infinite = [
-                'node',
-                'ipcidr',
-                'pillar',
-                'pillar_pcre']
-        if not self.opts.get('minion_data_cache', False):
-            infinite.append('grain')
-            infinite.append('grain_pcre')
 
         target_info = parse_target(valid)
         if not target_info:
@@ -660,12 +654,6 @@ class CkMinions(object):
         v_matcher = ref.get(target_info['engine'])
         v_expr = target_info['pattern']
 
-        if v_matcher in infinite:
-            # We can't be sure what the subset is, only match the identical
-            # target
-            if v_matcher != expr_form:
-                return False
-            return v_expr == expr
         v_minions = set(self.check_minions(v_expr, v_matcher))
         minions = set(self.check_minions(expr, expr_form))
         d_bool = not bool(minions.difference(v_minions))

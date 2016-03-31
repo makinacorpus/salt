@@ -121,6 +121,7 @@ def query(url,
           decode_out=None,
           stream=False,
           streaming_callback=None,
+          header_callback=None,
           handle=False,
           agent=USERAGENT,
           hide_fields=None,
@@ -434,6 +435,7 @@ def query(url,
                     validate_cert=verify_ssl,
                     allow_nonstandard_methods=True,
                     streaming_callback=streaming_callback,
+                    header_callback=header_callback,
                     request_timeout=timeout,
                     **req_kwargs
                 )
@@ -448,6 +450,7 @@ def query(url,
                     validate_cert=verify_ssl,
                     allow_nonstandard_methods=True,
                     streaming_callback=streaming_callback,
+                    header_callback=header_callback,
                     request_timeout=timeout,
                     **req_kwargs
                 )
@@ -549,7 +552,7 @@ def query(url,
         else:
             text = True
 
-        if decode_out and os.path.exists(decode_out):
+        if decode_out:
             with salt.utils.fopen(decode_out, 'w') as dof:
                 dof.write(result_text)
 

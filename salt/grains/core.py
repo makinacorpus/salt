@@ -908,7 +908,7 @@ def id_():
     '''
     return {'id': __opts__.get('id', '')}
 
-_REPLACE_LINUX_RE = re.compile(r'\Wlinux', re.IGNORECASE)
+_REPLACE_LINUX_RE = re.compile(r'\W(?:gnu/)?linux', re.IGNORECASE)
 
 # This maps (at most) the first ten characters (no spaces, lowercased) of
 # 'osfullname' to the 'os' grain that Salt traditionally uses.
@@ -920,8 +920,7 @@ _OS_NAME_MAP = {
     'archarm': 'Arch ARM',
     'arch': 'Arch',
     'debian': 'Debian',
-    'debiangnu/': 'Debian',
-    'raspbiangn': 'Raspbian',
+    'raspbian': 'Raspbian',
     'fedoraremi': 'Fedora',
     'amazonami': 'Amazon',
     'alt': 'ALT',
@@ -1261,10 +1260,19 @@ def os_data():
             grains['osfullname'] = \
                 grains.get('lsb_distrib_id', osname).strip()
         if 'osrelease' not in grains:
+            # NOTE: This is a workaround for CentOS 7 os-release bug
+            # https://bugs.centos.org/view.php?id=8359
+            # /etc/os-release contains no minor distro release number so we fall back to parse
+            # /etc/centos-release file instead.
+            # Commit introducing this comment should be reverted after the upstream bug is released.
+            if 'CentOS Linux 7' in grains.get('lsb_distrib_codename', ''):
+                grains.pop('lsb_distrib_release', None)
             grains['osrelease'] = \
                 grains.get('lsb_distrib_release', osrelease).strip()
         grains['oscodename'] = grains.get('lsb_distrib_codename',
                                           oscodename).strip()
+        if 'Red Hat' in grains['oscodename']:
+            grains['oscodename'] = oscodename
         distroname = _REPLACE_LINUX_RE.sub('', grains['osfullname']).strip()
         # return the first ten characters with no spaces, lowercased
         shortname = distroname.replace(' ', '').lower()[:10]

@@ -17,7 +17,7 @@ import shlex
 # Import 3rd-party libs
 import salt.utils.itertools
 import salt.utils.systemd
-from salt.exceptions import CommandExecutionError, CommandNotFoundError
+from salt.exceptions import CommandExecutionError
 from salt.ext import six
 
 log = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ __func_alias__ = {
     'reload_': 'reload'
 }
 
-SYSTEM_CONFIG_PATH = '/lib/systemd/system'
+SYSTEM_CONFIG_PATHS = ('/lib/systemd/system', '/usr/lib/systemd/system')
 LOCAL_CONFIG_PATH = '/etc/systemd/system'
 INITSCRIPT_PATH = '/etc/init.d'
 VALID_UNIT_TYPES = ('service', 'socket', 'device', 'mount', 'automount',
@@ -129,16 +129,6 @@ def _default_runlevel():
     return runlevel
 
 
-def _get_service_exec():
-    '''
-    Debian uses update-rc.d to manage System-V style services.
-    http://www.debian.org/doc/debian-policy/ch-opersys.html#s9.3.3
-    '''
-    executable = 'update-rc.d'
-    salt.utils.check_or_die(executable)
-    return executable
-
-
 def _get_systemd_services():
     '''
     Use os.listdir() to get all the unit files
@@ -147,14 +137,18 @@ def _get_systemd_services():
     if contextkey in __context__:
         return __context__[contextkey]
     ret = set()
-    for path in (SYSTEM_CONFIG_PATH, LOCAL_CONFIG_PATH):
-        for fullname in os.listdir(path):
-            try:
-                unit_name, unit_type = fullname.rsplit('.', 1)
-            except ValueError:
-                continue
-            if unit_type in VALID_UNIT_TYPES:
-                ret.add(unit_name if unit_type == 'service' else fullname)
+    for path in SYSTEM_CONFIG_PATHS + (LOCAL_CONFIG_PATH,):
+        # Make sure user has access to the path, and if the path is a link
+        # it's likely that another entry in SYSTEM_CONFIG_PATHS or LOCAL_CONFIG_PATH
+        # points to it, so we can ignore it.
+        if os.access(path, os.R_OK) and not os.path.islink(path):
+            for fullname in os.listdir(path):
+                try:
+                    unit_name, unit_type = fullname.rsplit('.', 1)
+                except ValueError:
+                    continue
+                if unit_type in VALID_UNIT_TYPES:
+                    ret.add(unit_name if unit_type == 'service' else fullname)
     __context__[contextkey] = copy.deepcopy(ret)
     return ret
 
@@ -196,16 +190,25 @@ def _get_sysv_services():
     return ret
 
 
-def _has_sysv_exec():
+def _get_service_exec():
     '''
-    Return the current runlevel
+    Returns the path to the sysv service manager (either update-rc.d or
+    chkconfig)
     '''
-    contextkey = 'systemd._has_sysv_exec'
+    contextkey = 'systemd._get_service_exec'
     if contextkey not in __context__:
-        try:
-            __context__[contextkey] = bool(_get_service_exec())
-        except (CommandExecutionError, CommandNotFoundError):
-            __context__[contextkey] = False
+        executables = ('update-rc.d', 'chkconfig')
+        for executable in executables:
+            service_exec = salt.utils.which(executable)
+            if service_exec is not None:
+                break
+        else:
+            raise CommandExecutionError(
+                'Unable to find sysv service manager (tried {0})'.format(
+                    ', '.join(executables)
+                )
+            )
+        __context__[contextkey] = service_exec
     return __context__[contextkey]
 
 
@@ -688,7 +691,11 @@ def enable(name, **kwargs):  # pylint: disable=unused-argument
     _check_for_unit_changes(name)
     unmask(name)
     if name in _get_sysv_services():
-        cmd = [_get_service_exec(), '-f', name, 'defaults', '99']
+        service_exec = _get_service_exec()
+        if service_exec.endswith('/update-rc.d'):
+            cmd = [service_exec, '-f', name, 'defaults', '99']
+        elif service_exec.endswith('/chkconfig'):
+            cmd = [service_exec, name, 'on']
         return __salt__['cmd.retcode'](cmd,
                                        python_shell=False,
                                        ignore_retcode=True) == 0
@@ -711,7 +718,11 @@ def disable(name, **kwargs):  # pylint: disable=unused-argument
     '''
     _check_for_unit_changes(name)
     if name in _get_sysv_services():
-        cmd = [_get_service_exec(), '-f', name, 'remove']
+        service_exec = _get_service_exec()
+        if service_exec.endswith('/update-rc.d'):
+            cmd = [service_exec, '-f', name, 'remove']
+        elif service_exec.endswith('/chkconfig'):
+            cmd = [service_exec, name, 'off']
         return __salt__['cmd.retcode'](cmd,
                                        python_shell=False,
                                        ignore_retcode=True) == 0
