@@ -29,6 +29,7 @@ Backports
 - [backport 2](https://github.com/makinacorpus/salt/commit/1d11453c466c62712f741735cbffec4d7cdb0665)
 - [backport 3](https://github.com/makinacorpus/salt/commit/0e0b8bedaed001b2359873c1be2d38e5376303df)
 - [backport 4](https://github.com/makinacorpus/salt/commit/7150efe9661c9bc759b1e226f2f043822d051f92)
+- [Backport mysql from salt/develop](https://github.com/makinacorpus/salt/commit/b7c109a35ba41c7c74d71b191ba6144bcf36d425)
 
 
 Removed changesets
