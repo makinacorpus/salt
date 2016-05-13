@@ -21,6 +21,7 @@ requisite to a pkg.installed state for the package which provides pip
 
 # Import python libs
 from __future__ import absolute_import
+import re
 import logging
 
 # Import salt libs
@@ -48,7 +49,7 @@ if HAS_PIP is True:
         if 'pip' in sys.modules:
             del sys.modules['pip']
 
-    ver = pip.__version__.split('.')
+    ver = getattr(pip, '__version__', '0.0.0').split('.')
     pip_ver = tuple([int(x) for x in ver if x.isdigit()])
     if pip_ver >= (8, 0, 0):
         from pip.exceptions import InstallationError
@@ -56,13 +57,6 @@ if HAS_PIP is True:
         InstallationError = ValueError
 
 # pylint: enable=import-error
-
-    ver = pip.__version__.split('.')
-    pip_ver = tuple([int(x) for x in ver if x.isdigit()])
-    if pip_ver >= (8, 0, 0):
-        from pip.exceptions import InstallationError
-    else:
-        InstallationError = ValueError
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +167,12 @@ def _check_pkg_version_format(pkg):
         ret['version_spec'] = []
     else:
         ret['result'] = True
-        ret['prefix'] = install_req.req.project_name
-        ret['version_spec'] = install_req.req.specs
+        ret['prefix'] = re.sub('[^A-Za-z0-9.]+', '-', install_req.name)
+        if hasattr(install_req, "specifier"):
+            specifier = install_req.specifier
+        else:
+            specifier = install_req.req.specifier
+        ret['version_spec'] = [(spec.operator, spec.version) for spec in specifier]
 
     return ret
 
@@ -261,7 +259,8 @@ def installed(name,
               process_dependency_links=False,
               env_vars=None,
               use_vt=False,
-              trusted_host=None):
+              trusted_host=None,
+              no_cache_dir=False):
     '''
     Make sure the package is installed
 
@@ -368,6 +367,9 @@ def installed(name,
         When user is given, do not attempt to copy and chown
         a requirements file
 
+    no_cache_dir:
+        Disable the cache.
+
     cwd
         Current working directory to run pip from
 
@@ -377,7 +379,7 @@ def installed(name,
 
         .. deprecated:: 2014.7.2
             If `bin_env` is given, pip will already be sourced from that
-            virualenv, making `activate` effectively a noop.
+            virtualenv, making `activate` effectively a noop.
 
     pre_releases
         Include pre-releases in the available versions
@@ -419,7 +421,7 @@ def installed(name,
                     VERBOSE: True
 
     use_vt
-        Use VT terminal emulation (see ouptut while installing)
+        Use VT terminal emulation (see output while installing)
 
     trusted_host
         Mark this host as trusted, even though it does not have valid or any
@@ -716,7 +718,8 @@ def installed(name,
         saltenv=__env__,
         env_vars=env_vars,
         use_vt=use_vt,
-        trusted_host=trusted_host
+        trusted_host=trusted_host,
+        no_cache_dir=no_cache_dir
     )
 
     # Check the retcode for success, but don't fail if using pip1 and the package is
@@ -751,6 +754,14 @@ def installed(name,
             # Create comments reporting success and failures
             pkg_404_comms = []
 
+            already_installed_packages = set()
+            for line in pip_install_call.get('stdout', '').split('\n'):
+                # Output for already installed packages:
+                # 'Requirement already up-to-date: jinja2 in /usr/local/lib/python2.7/dist-packages\nCleaning up...'
+                if line.startswith('Requirement already up-to-date: '):
+                    package = line.split(':', 1)[1].split()[0]
+                    already_installed_packages.add(package.lower())
+
             for prefix, state_name in target_pkgs:
 
                 # Case for packages that are not an URL
@@ -768,6 +779,8 @@ def installed(name,
                         )
                     else:
                         pkg_name = _find_key(prefix, pipsearch)
+                        if pkg_name.lower() in already_installed_packages:
+                            continue
                         ver = pipsearch[pkg_name]
                         ret['changes']['{0}=={1}'.format(pkg_name,
                                                          ver)] = 'Installed'
@@ -833,7 +846,7 @@ def removed(name,
     bin_env : None
         the pip executable or virtualenenv to use
     use_vt
-        Use VT terminal emulation (see ouptut while installing)
+        Use VT terminal emulation (see output while installing)
     '''
     ret = {'name': name, 'result': None, 'comment': '', 'changes': {}}
 
@@ -890,7 +903,7 @@ def uptodate(name,
     bin_env
         the pip executable or virtualenenv to use
     use_vt
-        Use VT terminal emulation (see ouptut while installing)
+        Use VT terminal emulation (see output while installing)
     '''
     ret = {'name': name,
            'changes': {},
