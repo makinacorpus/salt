@@ -90,7 +90,7 @@ class SaltCMD(parsers.SaltCMDOptionParser):
 
             else:
                 try:
-                    batch = salt.cli.batch.Batch(self.config, eauth=eauth)
+                    batch = salt.cli.batch.Batch(self.config, eauth=eauth, parser=self.options)
                 except salt.exceptions.SaltClientError as exc:
                     # We will print errors to the console further down the stack
                     sys.exit(1)
@@ -100,7 +100,11 @@ class SaltCMD(parsers.SaltCMDOptionParser):
                         for ret in six.itervalues(res):
                             retcode = salt.utils.job.get_retcode(ret)
                             if retcode != 0:
-                                sys.stderr.write('ERROR: Minions returned with non-zero exit code\n')
+                                sys.stderr.write(
+                                    '{0}\nERROR: Minions returned with non-zero exit code.\n'.format(
+                                        res
+                                    )
+                                )
                                 sys.exit(retcode)
 
         else:

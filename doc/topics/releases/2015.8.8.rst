@@ -18,6 +18,10 @@ Salt 2015.8.8.2 includes fixes for the following known issues in 2015.8.8:
 - :issue:`32114`: Wrong validation type for file_ignore_glob key
 - :issue:`31969`: Fix file.managed for windows
 
+.. important:: :issue:`32183` prevents Salt Cloud from installing the Salt minion
+   on new systems. To workaround this issue, call ``salt-cloud -u`` to update the
+   bootstrap script to the latest version.
+
 Salt 2015.8.8
 =============
 
@@ -161,7 +165,7 @@ Changes:
 
 - **PR** `#31770`_: (*anlutro*) Fix influxdb user functionality for version 0.9+
 
-- **PR** `#31743`_: (*Talkless*) Fix parentheses missmatch in documentation
+- **PR** `#31743`_: (*Talkless*) Fix parentheses mismatch in documentation
 
 - **PR** `#31162`_: (*isbm*) Remove MD5 digest from everywhere and default to SHA256
 
@@ -293,7 +297,7 @@ Changes:
 
 - **PR** `#31390`_: (*abednarik*) Fix Logrotate module.
 
-- **PR** `#31354`_: (*ticosax*) [dockerng] Dont require auth for all registries
+- **PR** `#31354`_: (*ticosax*) [dockerng] Don't require auth for all registries
 
 - **PR** `#31368`_: (*whiteinge*) Update list of netapi clients for autoclass
 

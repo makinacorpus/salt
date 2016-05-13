@@ -14,7 +14,7 @@ import traceback
 from random import randint
 
 # Import salt libs
-from salt.exceptions import SaltSystemExit, SaltClientError, SaltReqTimeoutError
+from salt.exceptions import SaltSystemExit, SaltClientError, SaltReqTimeoutError, get_error_message
 import salt.defaults.exitcodes  # pylint: disable=unused-import
 
 log = logging.getLogger(__name__)
@@ -65,10 +65,12 @@ def minion_process(queue):
             time.sleep(5)
             try:
                 # check pid alive (Unix only trick!)
-                os.kill(parent_pid, 0)
-            except OSError:
+                if os.getuid() == 0 and not salt.utils.is_windows():
+                    os.kill(parent_pid, 0)
+            except OSError as exc:
                 # forcibly exit, regular sys.exit raises an exception-- which
                 # isn't sufficient in a thread
+                log.error('Minion process encountered exception: {0}'.format(exc))
                 os._exit(999)
     if not salt.utils.is_windows():
         thread = threading.Thread(target=suicide_when_without_parent, args=(os.getppid(),))
@@ -80,12 +82,16 @@ def minion_process(queue):
         minion = salt.cli.daemons.Minion()
         minion.start()
     except (Exception, SaltClientError, SaltReqTimeoutError, SaltSystemExit) as exc:
-        log.error('Minion failed to start', exc_info=False)
+        log.error(
+            'Minion failed to start: {0}'.format(get_error_message(exc)),
+            exc_info=True
+        )
         restart = True
     except SystemExit as exc:
         restart = False
 
     if restart is True:
+        log.warning('Fatal functionality error caught by minion handler:\n', exc_info=True)
         log.warn('** Restarting minion **')
         delay = 60
         if minion is not None:
@@ -297,6 +303,8 @@ def salt_key():
             SystemExit('\nExiting gracefully on Ctrl-c'),
             err,
             hardcrash, trace=trace)
+    except Exception as err:
+        sys.stderr.write("Error: {0}\n".format(err.message))
 
 
 def salt_cp():

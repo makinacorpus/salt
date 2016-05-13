@@ -50,7 +50,7 @@ try:
 except ImportError as exc:
     if exc.args[0] != 'No module named _msgpack':
         raise
-from salt.exceptions import SaltSystemExit
+from salt.exceptions import SaltSystemExit, SaltClientError, get_error_message
 
 
 # Let's instantiate logger using salt.log.setup.logging.getLogger() so pylint
@@ -70,7 +70,7 @@ class DaemonsMixin(object):  # pylint: disable=no-init
         '''
         if self.config['hash_type'].lower() in ['md5', 'sha1']:
             logger.warning('IMPORTANT: Do not use {h_type} hashing algorithm! Please set "hash_type" to '
-                           'SHA256 in Salt {d_name} config!'.format(
+                           'sha256 in Salt {d_name} config!'.format(
                 h_type=self.config['hash_type'], d_name=self.__class__.__name__))
 
     def start_log_info(self):
@@ -97,7 +97,7 @@ class DaemonsMixin(object):  # pylint: disable=no-init
         :return:
         '''
         logger.exception('Failed to create environment for {d_name}: {reason}'.format(
-            d_name=self.__class__.__name__, reason=error.message))
+            d_name=self.__class__.__name__, reason=get_error_message(error)))
         sys.exit(error.errno)
 
 
@@ -318,6 +318,8 @@ class Minion(parsers.MinionOptionParser, DaemonsMixin):  # pylint: disable=no-in
                 self.verify_hash_type()
                 self.start_log_info()
                 self.minion.tune_in()
+                if self.minion.restart:
+                    raise SaltClientError('Minion could not connect to Master')
         finally:
             self.shutdown()
 

@@ -2004,7 +2004,7 @@ def create(vm_):
     '''
     try:
         # Check for required profile parameters before sending any API calls.
-        if config.is_profile_configured(__opts__,
+        if vm_['profile'] and config.is_profile_configured(__opts__,
                                         __active_provider_name__ or 'vmware',
                                         vm_['profile'],
                                         vm_=vm_) is False:
@@ -3356,12 +3356,12 @@ def remove_host(kwargs=None, call=None):
         )
 
     try:
-        if isinstance(host_ref.parent, vim.ComputeResource):
-            # This is a standalone host system
-            task = host_ref.parent.Destroy_Task()
-        else:
+        if isinstance(host_ref.parent, vim.ClusterComputeResource):
             # This is a host system that is part of a Cluster
             task = host_ref.Destroy_Task()
+        else:
+            # This is a standalone host system
+            task = host_ref.parent.Destroy_Task()
         salt.utils.vmware.wait_for_task(task, host_name, 'remove host', log_level='info')
     except Exception as exc:
         log.error(

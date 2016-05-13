@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 '''
-The default service module, if not otherwise specified salt will fall back
-to this basic module
+If Salt's OS detection does not identify a different virtual service module, the minion will fall back to using this basic module, which simply wraps sysvinit scripts.
 '''
 from __future__ import absolute_import
 
@@ -42,7 +41,8 @@ def __virtual__():
         'Linaro',
         'elementary OS',
         'McAfee  OS Server',
-        'Mint'
+        'Mint',
+        'Raspbian'
     ))
     if __grains__.get('os', '') in disable:
         return False

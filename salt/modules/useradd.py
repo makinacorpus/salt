@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 '''
 Manage users with the useradd command
+
+.. important::
+    If you feel that Salt should be using this module to manage users on a
+    minion, and it is using a different module (or gives an error similar to
+    *'user.info' is not available*), see :ref:`here
+    <module-provider-override>`.
 '''
 from __future__ import absolute_import
 
@@ -141,10 +147,9 @@ def add(name,
                         if 'group' not in line[:5]:
                             continue
 
-                        for val in line.split(' '):
-                            cmd.extend([
-                                '-g', str(val[1])
-                            ])
+                        cmd.extend([
+                            '-g', str(line.split()[-1])
+                        ])
 
                         # We found what we wanted, let's break out of the loop
                         break

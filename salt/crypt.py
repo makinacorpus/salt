@@ -15,6 +15,7 @@ import logging
 import traceback
 import binascii
 import weakref
+import getpass
 from salt.ext.six.moves import zip  # pylint: disable=import-error,redefined-builtin
 
 # Import third party libs
@@ -94,6 +95,11 @@ def gen_keys(keydir, keyname, keysize, user=None):
         # Between first checking and the generation another process has made
         # a key! Use the winner's key
         return priv
+
+    # Do not try writing anything, if directory has no permissions.
+    if not os.access(keydir, os.W_OK):
+        raise IOError('Write access denied to "{0}" for user "{1}".'.format(os.path.abspath(keydir), getpass.getuser()))
+
     cumask = os.umask(191)
     with salt.utils.fopen(priv, 'wb+') as f:
         f.write(gen.exportKey('PEM'))
@@ -431,10 +437,14 @@ class AsyncAuth(object):
         if not acceptance_wait_time_max:
             acceptance_wait_time_max = acceptance_wait_time
         creds = None
+        channel = salt.transport.client.AsyncReqChannel.factory(self.opts,
+                                                                crypt='clear',
+                                                                io_loop=self.io_loop)
+        error = None
         while True:
             try:
-                creds = yield self.sign_in()
-            except SaltClientError:
+                creds = yield self.sign_in(channel=channel)
+            except SaltClientError as error:
                 break
             if creds == 'retry':
                 if self.opts.get('caller'):
@@ -454,9 +464,9 @@ class AsyncAuth(object):
                 del AsyncAuth.creds_map[self.__key(self.opts)]
             except KeyError:
                 pass
-            self._authenticate_future.set_exception(
-                SaltClientError('Attempt to authenticate with the salt master failed')
-            )
+            if not error:
+                error = SaltClientError('Attempt to authenticate with the salt master failed')
+            self._authenticate_future.set_exception(error)
         else:
             AsyncAuth.creds_map[self.__key(self.opts)] = creds
             self._creds = creds
@@ -464,7 +474,7 @@ class AsyncAuth(object):
             self._authenticate_future.set_result(True)  # mark the sign-in as complete
 
     @tornado.gen.coroutine
-    def sign_in(self, timeout=60, safe=True, tries=1):
+    def sign_in(self, timeout=60, safe=True, tries=1, channel=None):
         '''
         Send a sign in request to the master, sets the key information and
         returns a dict containing the master publish interface to bind to
@@ -496,7 +506,8 @@ class AsyncAuth(object):
 
         auth['master_uri'] = self.opts['master_uri']
 
-        channel = salt.transport.client.AsyncReqChannel.factory(self.opts,
+        if not channel:
+            channel = salt.transport.client.AsyncReqChannel.factory(self.opts,
                                                                 crypt='clear',
                                                                 io_loop=self.io_loop)
 
@@ -879,6 +890,20 @@ class AsyncAuth(object):
                     salt.utils.fopen(m_pub_fn, 'wb+').write(payload['pub_key'])
                 return self.extract_aes(payload, master_pub=False)
 
+    def _finger_fail(self, finger, master_key):
+        log.critical(
+            'The specified fingerprint in the master configuration '
+            'file:\n{0}\nDoes not match the authenticating master\'s '
+            'key:\n{1}\nVerify that the configured fingerprint '
+            'matches the fingerprint of the correct master and that '
+            'this minion is not subject to a man-in-the-middle attack.'
+            .format(
+                finger,
+                salt.utils.pem_finger(master_key, sum_type=self.opts['hash_type'])
+            )
+        )
+        sys.exit(42)
+
 
 # TODO: remove, we should just return a sync wrapper of AsyncAuth
 class SAuth(AsyncAuth):
@@ -960,10 +985,11 @@ class SAuth(AsyncAuth):
         '''
         acceptance_wait_time = self.opts['acceptance_wait_time']
         acceptance_wait_time_max = self.opts['acceptance_wait_time_max']
+        channel = salt.transport.client.ReqChannel.factory(self.opts, crypt='clear')
         if not acceptance_wait_time_max:
             acceptance_wait_time_max = acceptance_wait_time
         while True:
-            creds = self.sign_in()
+            creds = self.sign_in(channel=channel)
             if creds == 'retry':
                 if self.opts.get('caller'):
                     print('Minion failed to authenticate with the master, '
@@ -980,7 +1006,7 @@ class SAuth(AsyncAuth):
         self._creds = creds
         self._crypticle = Crypticle(self.opts, creds['aes'])
 
-    def sign_in(self, timeout=60, safe=True, tries=1):
+    def sign_in(self, timeout=60, safe=True, tries=1, channel=None):
         '''
         Send a sign in request to the master, sets the key information and
         returns a dict containing the master publish interface to bind to
@@ -1012,7 +1038,8 @@ class SAuth(AsyncAuth):
 
         auth['master_uri'] = self.opts['master_uri']
 
-        channel = salt.transport.client.ReqChannel.factory(self.opts, crypt='clear')
+        if not channel:
+            channel = salt.transport.client.ReqChannel.factory(self.opts, crypt='clear')
 
         sign_in_payload = self.minion_sign_in_payload()
         try:
@@ -1025,7 +1052,7 @@ class SAuth(AsyncAuth):
             if safe:
                 log.warning('SaltReqTimeoutError: {0}'.format(e))
                 return 'retry'
-            raise SaltClientError('Attempt to authenticate with the salt master failed')
+            raise SaltClientError('Attempt to authenticate with the salt master failed with timeout error')
 
         if 'load' in payload:
             if 'ret' in payload['load']:
@@ -1085,20 +1112,6 @@ class SAuth(AsyncAuth):
                     self._finger_fail(self.opts['master_finger'], m_pub_fn)
         auth['publish_port'] = payload['publish_port']
         return auth
-
-    def _finger_fail(self, finger, master_key):
-        log.critical(
-            'The specified fingerprint in the master configuration '
-            'file:\n{0}\nDoes not match the authenticating master\'s '
-            'key:\n{1}\nVerify that the configured fingerprint '
-            'matches the fingerprint of the correct master and that '
-            'this minion is not subject to a man-in-the-middle attack.'
-            .format(
-                finger,
-                salt.utils.pem_finger(master_key, sum_type=self.opts['hash_type'])
-            )
-        )
-        sys.exit(42)
 
 
 class Crypticle(object):

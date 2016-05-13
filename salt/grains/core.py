@@ -58,6 +58,7 @@ if salt.utils.is_windows():
     try:
         import wmi  # pylint: disable=import-error
         import salt.utils.winapi
+        import win32api
         HAS_WMI = True
     except ImportError:
         log.exception(
@@ -406,13 +407,10 @@ def _memdata(osdata):
             if comps[0].strip() == 'Memory' and comps[1].strip() == 'size:':
                 grains['mem_total'] = int(comps[2].strip())
     elif osdata['kernel'] == 'Windows' and HAS_WMI:
-        with salt.utils.winapi.Com():
-            wmi_c = wmi.WMI()
-            # this is a list of each stick of ram in a system
-            # WMI returns it as the string value of the number of bytes
-            tot_bytes = sum([int(x.Capacity) for x in wmi_c.Win32_PhysicalMemory()], 0)
-            # return memory info in gigabytes
-            grains['mem_total'] = int(tot_bytes / (1024 ** 2))
+        # get the Total Physical memory as reported by msinfo32
+        tot_bytes = win32api.GlobalMemoryStatusEx()['TotalPhys']
+        # return memory info in gigabytes
+        grains['mem_total'] = int(tot_bytes / (1024 ** 2))
     return grains
 
 
@@ -1184,14 +1182,19 @@ def os_data():
                         for line in fhr:
                             if 'enterprise' in line.lower():
                                 grains['lsb_distrib_id'] = 'SLES'
+                                grains['lsb_distrib_codename'] = re.sub(r'\(.+\)', '', line).strip()
                             elif 'version' in line.lower():
                                 version = re.sub(r'[^0-9]', '', line)
                             elif 'patchlevel' in line.lower():
                                 patch = re.sub(r'[^0-9]', '', line)
                     grains['lsb_distrib_release'] = version
                     if patch:
-                        grains['lsb_distrib_release'] += ' SP' + patch
-                    grains['lsb_distrib_codename'] = 'n.a'
+                        grains['lsb_distrib_release'] += '.' + patch
+                        patchstr = 'SP' + patch
+                        if grains['lsb_distrib_codename'] and patchstr not in grains['lsb_distrib_codename']:
+                            grains['lsb_distrib_codename'] += ' ' + patchstr
+                    if not grains['lsb_distrib_codename']:
+                        grains['lsb_distrib_codename'] = 'n.a'
                 elif os.path.isfile('/etc/altlinux-release'):
                     # ALT Linux
                     grains['lsb_distrib_id'] = 'altlinux'

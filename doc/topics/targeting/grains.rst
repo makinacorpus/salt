@@ -73,7 +73,7 @@ Grains in the Minion Config
 ===========================
 
 Grains can also be statically assigned within the minion configuration file.
-Just add the option ``grains`` and pass options to it:
+Just add the option :conf_minion:`grains` and pass options to it:
 
 .. code-block:: yaml
 
@@ -116,13 +116,13 @@ the following configuration:
 
 .. code-block:: yaml
 
-    'node_type:web':
+    'node_type:webserver':
       - match: grain
       - webserver
 
     'node_type:postgres':
       - match: grain
-      - database
+      - postgres
 
     'node_type:redis':
       - match: grain

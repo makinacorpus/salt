@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 '''
 Service support for RHEL-based systems, including support for both upstart and sysvinit
+
+.. important::
+    If you feel that Salt should be using this module to manage services on a
+    minion, and it is using a different module (or gives an error similar to
+    *'service.start' is not available*), see :ref:`here
+    <module-provider-override>`.
 '''
 from __future__ import absolute_import
 
@@ -76,7 +82,7 @@ def __virtual__():
                     'Fedora >= 15 uses systemd, will not load rh_service.py '
                     'as virtual \'service\''
                 )
-        if __grains__['os'] in ('RedHat', 'CentOS', 'ScientificLinux', 'OEL'):
+        if __grains__['os'] in ('RedHat', 'CentOS', 'ScientificLinux', 'OEL', 'CloudLinux'):
             if osrelease_major >= 7:
                 return (
                     False,

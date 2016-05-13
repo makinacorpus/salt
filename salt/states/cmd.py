@@ -787,13 +787,6 @@ def run(name,
            'result': False,
            'comment': ''}
 
-    if cwd and not os.path.isdir(cwd):
-        ret['comment'] = (
-            'Desired working directory "{0}" '
-            'is not available'
-        ).format(cwd)
-        return ret
-
     # Need the check for None here, if env is not provided then it falls back
     # to None and it is assumed that the environment is not being overridden.
     if env is not None and not isinstance(env, (list, dict)):
@@ -823,6 +816,13 @@ def run(name,
             ret['result'] = None
             ret['comment'] = 'Command "{0}" would have been executed'.format(name)
             return _reinterpreted_state(ret) if stateful else ret
+
+        if cwd and not os.path.isdir(cwd):
+            ret['comment'] = (
+                'Desired working directory "{0}" '
+                'is not available'
+            ).format(cwd)
+            return ret
 
         # Wow, we passed the test, run this sucker!
         try:
@@ -951,6 +951,9 @@ def script(name,
                 - env:
                   - PATH: {{ [current_path, '/my/special/bin']|join(':') }}
 
+    saltenv : ``base``
+        The Salt environment to use
+
     umask
          The umask (in octal) to use when running the command.
 
@@ -996,13 +999,6 @@ def script(name,
            'changes': {},
            'result': False,
            'comment': ''}
-
-    if cwd and not os.path.isdir(cwd):
-        ret['comment'] = (
-            'Desired working directory "{0}" '
-            'is not available'
-        ).format(cwd)
-        return ret
 
     # Need the check for None here, if env is not provided then it falls back
     # to None and it is assumed that the environment is not being overridden.
@@ -1057,6 +1053,13 @@ def script(name,
             ret['comment'] = 'Command {0!r} would have been ' \
                              'executed'.format(name)
             return _reinterpreted_state(ret) if stateful else ret
+
+        if cwd and not os.path.isdir(cwd):
+            ret['comment'] = (
+                'Desired working directory "{0}" '
+                'is not available'
+            ).format(cwd)
+            return ret
 
         # Wow, we passed the test, run this sucker!
         try:

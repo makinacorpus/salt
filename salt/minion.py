@@ -84,6 +84,7 @@ import salt.utils.jid
 import salt.pillar
 import salt.utils.args
 import salt.utils.event
+import salt.utils.minion
 import salt.utils.minions
 import salt.utils.schedule
 import salt.utils.error
@@ -490,6 +491,7 @@ class MinionBase(object):
                 msg = ('No master could be reached or all masters denied '
                        'the minions connection attempt.')
                 log.error(msg)
+                raise SaltClientError(msg)
             else:
                 self.tok = pub_channel.auth.gen_token('salt')
                 self.connected = True
@@ -710,6 +712,7 @@ class Minion(MinionBase):
         self._running = None
         self.win_proc = []
         self.loaded_base_name = loaded_base_name
+        self.restart = False
 
         self.io_loop = io_loop or zmq.eventloop.ioloop.ZMQIOLoop()
         if not self.io_loop.initialized():
@@ -1296,15 +1299,8 @@ class Minion(MinionBase):
                     load['out'] = oput
         if self.opts['cache_jobs']:
             # Local job cache has been enabled
-            fn_ = os.path.join(
-                self.opts['cachedir'],
-                'minion_jobs',
-                load['jid'],
-                'return.p')
-            jdir = os.path.dirname(fn_)
-            if not os.path.isdir(jdir):
-                os.makedirs(jdir)
-            salt.utils.fopen(fn_, 'w+b').write(self.serial.dumps(ret))
+            salt.utils.minion.cache_jobs(self.opts, load['jid'], ret)
+
         try:
             ret_val = channel.send(load, timeout=timeout)
         except SaltReqTimeoutError:
@@ -1607,9 +1603,13 @@ class Minion(MinionBase):
 
                     # if eval_master finds a new master for us, self.connected
                     # will be True again on successful master authentication
-                    master, self.pub_channel = yield self.eval_master(
-                                                        opts=self.opts,
-                                                        failed=True)
+                    try:
+                        master, self.pub_channel = yield self.eval_master(
+                                                            opts=self.opts,
+                                                            failed=True)
+                    except SaltClientError:
+                        pass
+
                     if self.connected:
                         self.opts['master'] = master
 
@@ -1632,6 +1632,9 @@ class Minion(MinionBase):
                         }
                         self.schedule.modify_job(name='__master_alive',
                                                  schedule=schedule)
+                    else:
+                        self.restart = True
+                        self.io_loop.stop()
 
         elif package.startswith('__master_connected'):
             # handle this event only once. otherwise it will pollute the log
@@ -1778,6 +1781,8 @@ class Minion(MinionBase):
         if start:
             try:
                 self.io_loop.start()
+                if self.restart:
+                    self.destroy()
             except (KeyboardInterrupt, RuntimeError):  # A RuntimeError can be re-raised by Tornado on shutdown
                 self.destroy()
 
@@ -1986,7 +1991,7 @@ class Syndic(Minion):
             if 'jid' not in event['data']:
                 # Not a job return
                 return
-            jdict = self.jids.setdefault(event['tag'], {})
+            jdict = self.jids.setdefault(event['data']['jid'], {})
             if not jdict:
                 jdict['__fun__'] = event['data'].get('fun')
                 jdict['__jid__'] = event['data']['jid']

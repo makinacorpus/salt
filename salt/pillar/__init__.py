@@ -49,7 +49,7 @@ def get_pillar(opts, grains, id_, saltenv=None, ext=None, env=None, funcs=None,
         'local': Pillar
     }.get(opts['file_client'], Pillar)
     # If local pillar and we're caching, run through the cache system first
-    log.info('Determining pillar cache')
+    log.debug('Determining pillar cache')
     if opts['pillar_cache']:
         log.info('Compiling pillar from cache')
         log.debug('get_pillar using pillar cache with ext: {0}'.format(ext))
@@ -572,15 +572,24 @@ class Pillar(object):
                 log.error(msg)
                 errors.append(msg)
             else:
-                log.debug(
-                    'Specified SLS \'%s\' in environment \'%s\' was not '
-                    'found. This could be because SLS \'%s\' is in an '
-                    'environment other than \'%s\', but \'%s\' is included in '
-                    'that environment\'s Pillar top file. It could also be '
-                    'due to environment \'%s\' not being defined in '
-                    '"pillar_roots"',
-                    sls, saltenv, sls, saltenv, saltenv, saltenv
-                )
+                msg = ('Specified SLS \'{0}\' in environment \'{1}\' was not '
+                       'found. '.format(sls, saltenv))
+                if self.opts.get('__git_pillar', False) is True:
+                    msg += (
+                        'This is likely caused by a git_pillar top file '
+                        'containing an environment other than the one for the '
+                        'branch in which it resides. Each git_pillar '
+                        'branch/tag must have its own top file.'
+                    )
+                else:
+                    msg += (
+                        'This could be because SLS \'{0}\' is in an '
+                        'environment other than \'{1}\', but \'{1}\' is '
+                        'included in that environment\'s Pillar top file. It '
+                        'could also be due to environment \'{1}\' not being '
+                        'defined in \'pillar_roots\'.'.format(sls, saltenv)
+                    )
+                log.debug(msg)
                 # return state, mods, errors
                 return None, mods, errors
         state = None
@@ -725,7 +734,13 @@ class Pillar(object):
             return pillar, errors
         ext = None
         # Bring in CLI pillar data
-        pillar.update(self.pillar_override)
+        if self.pillar_override and isinstance(self.pillar_override, dict):
+            pillar = merge(pillar,
+                           self.pillar_override,
+                           self.merge_strategy,
+                           self.opts.get('renderer', 'yaml'),
+                           self.opts.get('pillar_merge_lists', False))
+
         for run in self.opts['ext_pillar']:
             if not isinstance(run, dict):
                 errors.append('The "ext_pillar" option is malformed')
@@ -804,6 +819,14 @@ class Pillar(object):
             for error in errors:
                 log.critical('Pillar render error: {0}'.format(error))
             pillar['_errors'] = errors
+
+        if self.pillar_override and isinstance(self.pillar_override, dict):
+            pillar = merge(pillar,
+                           self.pillar_override,
+                           self.merge_strategy,
+                           self.opts.get('renderer', 'yaml'),
+                           self.opts.get('pillar_merge_lists', False))
+
         return pillar
 
 

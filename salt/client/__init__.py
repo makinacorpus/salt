@@ -21,16 +21,9 @@ The data structure needs to be:
 # Import python libs
 from __future__ import absolute_import, print_function
 import os
-import sys
 import time
-import copy
-import errno
 import logging
-import re
 from datetime import datetime
-
-# Import 3rd-party libs
-
 
 # Import salt libs
 import salt.config
@@ -219,7 +212,7 @@ class LocalClient(object):
         Common checks on the pub_data data structure returned from running pub
         '''
         if not pub_data:
-            # Failed to autnenticate, this could be a bunch of things
+            # Failed to authenticate, this could be a bunch of things
             raise EauthAuthenticationError(
                 'Failed to authenticate! This is most likely because this '
                 'user is not permitted to execute commands, but there is a '
@@ -293,7 +286,7 @@ class LocalClient(object):
                 'The salt master could not be contacted. Is master running?'
             )
         except Exception as general_exception:
-            # Convert to generic client error and pass along mesasge
+            # Convert to generic client error and pass along message
             raise SaltClientError(general_exception)
 
         return self._check_pub_data(pub_data)
@@ -573,7 +566,7 @@ class LocalClient(object):
             **kwargs):
         '''
         Used by the :command:`salt` CLI. This method returns minion returns as
-        the come back and attempts to block until all minions return.
+        they come back and attempts to block until all minions return.
 
         The function signature is the same as :py:meth:`cmd` with the
         following exceptions.
@@ -678,6 +671,8 @@ class LocalClient(object):
             expr_form='glob',
             ret='',
             kwarg=None,
+            show_jid=False,
+            verbose=False,
             **kwargs):
         '''
         Yields the individual minion returns as they come in, or None
@@ -721,6 +716,9 @@ class LocalClient(object):
                                                 tgt_type=expr_form,
                                                 block=False,
                                                 **kwargs):
+                if fn_ret and any([show_jid, verbose]):
+                    for minion in fn_ret.keys():
+                        fn_ret[minion]['jid'] = pub_data['jid']
                 yield fn_ret
 
         self._clean_up_subscriptions(pub_data['jid'])
@@ -876,6 +874,8 @@ class LocalClient(object):
             ret_iter = self.get_returns_no_block('salt/job/{0}'.format(jid))
         # iterator for the info of this job
         jinfo_iter = []
+        # open event jids that need to be un-subscribed from later
+        open_jids = set()
         timeout_at = time.time() + timeout
         gather_syndic_wait = time.time() + self.opts['syndic_wait']
         # are there still minions running the job out there
@@ -956,9 +956,10 @@ class LocalClient(object):
             for raw in jinfo_iter:
                 # if there are no more events, lets stop waiting for the jinfo
                 if raw is None:
-                    self.event.unsubscribe(jinfo['jid'])
-                    jinfo_iter = []
                     break
+
+                # Keep track of the jid events to unsubscribe from later
+                open_jids.add(jinfo['jid'])
 
                 # TODO: move to a library??
                 if 'minions' in raw.get('data', {}):
@@ -1002,6 +1003,12 @@ class LocalClient(object):
                 time.sleep(0.01)
             else:
                 yield
+
+        # If there are any remaining open events, clean them up.
+        if open_jids:
+            for jid in open_jids:
+                self.event.unsubscribe(jid)
+
         if expect_minions:
             for minion in list((minions - found)):
                 yield {minion: {'failed': True}}
@@ -1182,7 +1189,7 @@ class LocalClient(object):
                 log.warning('jid does not exist')
                 return ret
         except Exception as exc:
-            raise SaltClientError('Load could not be retreived from '
+            raise SaltClientError('Load could not be retrieved from '
                                   'returner {0}. Exception details: {1}'.format(
                                       self.opts['master_job_cache'],
                                       exc))
