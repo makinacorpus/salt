@@ -31,7 +31,7 @@ Backports
 - [backport 4](https://github.com/makinacorpus/salt/commit/7150efe9661c9bc759b1e226f2f043822d051f92)
 - [Backport mysql from salt/develop](https://github.com/makinacorpus/salt/commit/b7c109a35ba41c7c74d71b191ba6144bcf36d425)
 - [backport docker.io from salt/develop](https://github.com/makinacorpus/salt/commit/0152b0478a63a80636265238f66566e0bfd445d9) 
-- [backport pip from salt/develop](https://github.com/makinacorpus/salt/commit/6119cfcc55980c23c8ae3f6d6ecbf2ca173725ce) 
+- [backport pip from salt/develop](https://github.com/makinacorpus/salt/commit/c6b79a229f7fc81d322e81c484c0b627f130c39c) 
 
 Removed changesets
 -------------------
