@@ -7,7 +7,7 @@ MakinaCorpus Saltstack fork
 
 DIVERGENCES TO KEEP AT ALL COSTS:
 ----------------------------------
-- [MC: lower virtual noice / 8890a251340c92e13e6f9ad1f4bb88d41220e0ca](https://github.com/makinacorpus/salt/commit/8890a251340c92e13e6f9ad1f4bb88d41220e0ca)
+- [MC: lower virtual noice / 0877a28873bda58af9e391aac70b4dcd0a4f5f77](https://github.com/makinacorpus/salt/commit/0877a28873bda58af9e391aac70b4dcd0a4f5f77)
 - [protect VT logs from unicode strings / 6039f1a8327892978da220b50f30e002c97d0a51](https://github.com/makinacorpus/salt/commit/6039f1a8327892978da220b50f30e002c97d0a51)
 
     - Upstream did not accepted this trivial changeset, even as a later changeable changeset, issue is pending for more than a while here:
