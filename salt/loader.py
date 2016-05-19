@@ -1541,7 +1541,8 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                     error_reason = ('Exception raised when processing __virtual__ function'
                               ' for {0}. Module will not be loaded {1}'.format(
                                   module_name, exc))
-                    log.error(error_reason, exc_info_on_loglevel=logging.DEBUG)
+                    # XXX: MC: unactivate virtual logging
+                    log.trace(error_reason, exc_info_on_loglevel=logging.DEBUG)
                     virtual = None
                 # Get the module's virtual name
                 virtualname = getattr(mod, '__virtualname__', virtual)
@@ -1553,7 +1554,8 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                     # Some modules might accidentally return None and are
                     # improperly loaded
                     if virtual is None:
-                        log.warning(
+                        # XXX: MC: unactivate virtual logging
+                        log.trace(
                             '{0}.__virtual__() is wrongly returning `None`. '
                             'It should either return `True`, `False` or a new '
                             'name. If you\'re the developer of the module '
