@@ -654,13 +654,18 @@ def version(*names, **kwargs):
     return __salt__['pkg_resource.version'](*names, **kwargs)
 
 
-def version_cmp(pkg1, pkg2):
+def version_cmp(pkg1, pkg2, ignore_epoch=False):
     '''
     .. versionadded:: 2015.5.4
 
     Do a cmp-style comparison on two packages. Return -1 if pkg1 < pkg2, 0 if
     pkg1 == pkg2, and 1 if pkg1 > pkg2. Return None if there was a problem
     making the comparison.
+
+    ignore_epoch : False
+        Set to ``True`` to ignore the epoch when comparing versions
+
+        .. versionadded:: 2015.8.10,2016.3.2
 
     CLI Example:
 
@@ -669,7 +674,7 @@ def version_cmp(pkg1, pkg2):
         salt '*' pkg.version_cmp '0.2-001' '0.2.0.1-002'
     '''
 
-    return __salt__['lowpkg.version_cmp'](pkg1, pkg2)
+    return __salt__['lowpkg.version_cmp'](pkg1, pkg2, ignore_epoch=ignore_epoch)
 
 
 def list_pkgs(versions_as_list=False, **kwargs):
@@ -727,7 +732,11 @@ def list_repo_pkgs(*args, **kwargs):
     .. versionchanged:: 2014.7.0
         All available versions of each package are now returned. This required
         a slight modification to the structure of the return dict. The return
-        data shown below reflects the updated return dict structure.
+        data shown below reflects the updated return dict structure. Note that
+        packages which are version-locked using :py:mod:`pkg.hold
+        <salt.modules.yumpkg.hold>` will only show the currently-installed
+        version, as locking a package will make other versions appear
+        unavailable to yum/dnf.
 
     Returns all available packages. Optionally, package names (and name globs)
     can be passed and the results will be filtered to packages matching those

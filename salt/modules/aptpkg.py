@@ -89,7 +89,7 @@ def __virtual__():
     '''
     Confirm this module is on a Debian based system
     '''
-    if __grains__.get('os_family') in ('Kali', 'Debian', 'LinuxMint'):
+    if __grains__.get('os_family') in ('Kali', 'Debian'):
         return __virtualname__
     return False
 
@@ -1177,7 +1177,7 @@ def list_pkgs(versions_as_list=False,
     return ret
 
 
-def _get_upgradable(dist_upgrade=True):
+def _get_upgradable(dist_upgrade=True, **kwargs):
     '''
     Utility function to get upgradable packages
 
@@ -1190,17 +1190,21 @@ def _get_upgradable(dist_upgrade=True):
         cmd.append('dist-upgrade')
     else:
         cmd.append('upgrade')
-    call = __salt__['cmd.run_all'](cmd, output_loglevel='trace', python_shell=False)
+    fromrepo = _get_repo(**kwargs)
+    if fromrepo:
+        cmd.extend(['-o', 'APT::Default-Release={0}'.format(fromrepo)])
+
+    call = __salt__['cmd.run_all'](cmd,
+                                   python_shell=False,
+                                   output_loglevel='trace')
 
     if call['retcode'] != 0:
-        comment = ''
-        if 'stderr' in call:
-            comment += call['stderr']
-        if 'stdout' in call:
-            comment += call['stdout']
-        raise CommandExecutionError(
-            '{0}'.format(comment)
-        )
+        msg = 'Failed to get upgrades'
+        for key in ('stderr', 'stdout'):
+            if call[key]:
+                msg += ': ' + call[key]
+                break
+        raise CommandExecutionError(msg)
     else:
         out = call['stdout']
 
@@ -1223,7 +1227,7 @@ def _get_upgradable(dist_upgrade=True):
     return ret
 
 
-def list_upgrades(refresh=True, dist_upgrade=True):
+def list_upgrades(refresh=True, dist_upgrade=True, **kwargs):
     '''
     List all available package upgrades.
 
@@ -1243,7 +1247,7 @@ def list_upgrades(refresh=True, dist_upgrade=True):
     '''
     if salt.utils.is_true(refresh):
         refresh_db()
-    return _get_upgradable(dist_upgrade)
+    return _get_upgradable(dist_upgrade, **kwargs)
 
 
 def upgrade_available(name):
@@ -1259,11 +1263,16 @@ def upgrade_available(name):
     return latest_version(name) != ''
 
 
-def version_cmp(pkg1, pkg2):
+def version_cmp(pkg1, pkg2, ignore_epoch=False):
     '''
     Do a cmp-style comparison on two packages. Return -1 if pkg1 < pkg2, 0 if
     pkg1 == pkg2, and 1 if pkg1 > pkg2. Return None if there was a problem
     making the comparison.
+
+    ignore_epoch : False
+        Set to ``True`` to ignore the epoch when comparing versions
+
+        .. versionadded:: 2015.8.10,2016.3.2
 
     CLI Example:
 
@@ -1271,9 +1280,10 @@ def version_cmp(pkg1, pkg2):
 
         salt '*' pkg.version_cmp '0.2.4-0ubuntu1' '0.2.4.1-0ubuntu1'
     '''
+    normalize = lambda x: str(x).split(':', 1)[-1] if ignore_epoch else str(x)
     # both apt_pkg.version_compare and _cmd_quote need string arguments.
-    pkg1 = str(pkg1)
-    pkg2 = str(pkg2)
+    pkg1 = normalize(pkg1)
+    pkg2 = normalize(pkg2)
 
     # if we have apt_pkg, this will be quickier this way
     # and also do not rely on shell.

@@ -173,7 +173,8 @@ def minion_mods(
         __opts__ = salt.config.minion_config('/etc/salt/minion')
         __grains__ = salt.loader.grains(__opts__)
         __opts__['grains'] = __grains__
-        __salt__ = salt.loader.minion_mods(__opts__)
+        __utils__ = salt.loader.utils(__opts__)
+        __salt__ = salt.loader.minion_mods(__opts__, utils=__utils__)
         __salt__['test.ping']()
     '''
     # TODO Publish documentation for module whitelisting
@@ -1206,7 +1207,7 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                 module_name,
             )
             if virtual_err is not None:
-                log.debug('Error loading {0}.{1}: {2}'.format(self.tag,
+                log.trace('Error loading {0}.{1}: {2}'.format(self.tag,
                                                               module_name,
                                                               virtual_err,
                                                               ))

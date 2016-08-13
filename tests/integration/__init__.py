@@ -57,7 +57,6 @@ import salt.output
 import salt.version
 import salt.utils
 import salt.utils.process
-from salt.utils import fopen, get_colors
 from salt.utils.verify import verify_env
 from salt.utils.immutabletypes import freeze
 from salt.exceptions import SaltClientError
@@ -176,7 +175,7 @@ class TestDaemon(object):
 
     def __init__(self, parser):
         self.parser = parser
-        self.colors = get_colors(self.parser.options.no_colors is False)
+        self.colors = salt.utils.get_colors(self.parser.options.no_colors is False)
 
     def __enter__(self):
         '''
@@ -726,7 +725,7 @@ class TestDaemon(object):
         if self.parser.options.clean is False:
             def sumfile(fpath):
                 # Since we will be doing this for small files, it should be ok
-                fobj = fopen(fpath)
+                fobj = salt.utils.fopen(fpath)
                 m = md5()
                 while True:
                     d = fobj.read(8096)
@@ -1226,11 +1225,11 @@ class ShellCase(AdaptedConfigurationTestCaseMixIn, ShellTestCase):
         arg_str = '-c {0} -i --priv {1} --roster-file {2} --out=json localhost {3}'.format(self.get_config_dir(), os.path.join(TMP_CONF_DIR, 'key_test'), os.path.join(TMP_CONF_DIR, 'roster'), arg_str)
         return self.run_script('salt-ssh', arg_str, with_retcode=with_retcode, catch_stderr=catch_stderr, raw=True)
 
-    def run_run(self, arg_str, with_retcode=False, catch_stderr=False, async=False, timeout=60):
+    def run_run(self, arg_str, with_retcode=False, catch_stderr=False, async=False, timeout=60, config_dir=None):
         '''
         Execute salt-run
         '''
-        arg_str = '-c {0}{async_flag} -t {timeout} {1}'.format(self.get_config_dir(),
+        arg_str = '-c {0}{async_flag} -t {timeout} {1}'.format(config_dir or self.get_config_dir(),
                                                   arg_str,
                                                   timeout=timeout,
                                                   async_flag=' --async' if async else '')

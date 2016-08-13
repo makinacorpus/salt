@@ -283,7 +283,7 @@ class _Zypper(object):
 __zypper__ = _Zypper()
 
 
-def list_upgrades(refresh=True):
+def list_upgrades(refresh=True, **kwargs):
     '''
     List all available package upgrades on this system
 
@@ -302,7 +302,13 @@ def list_upgrades(refresh=True):
         refresh_db()
 
     ret = dict()
-    for update_node in __zypper__.nolock.xml.call('list-updates').getElementsByTagName('update'):
+    cmd = ['list-updates']
+    if 'fromrepo' in kwargs:
+        repo_name = kwargs['fromrepo']
+        if not isinstance(repo_name, six.string_types):
+            repo_name = str(repo_name)
+        cmd.extend(['--repo', repo_name])
+    for update_node in __zypper__.nolock.xml.call(*cmd).getElementsByTagName('update'):
         if update_node.getAttribute('kind') == 'package':
             ret[update_node.getAttribute('name')] = update_node.getAttribute('edition')
 
@@ -519,7 +525,7 @@ def version(*names, **kwargs):
     return __salt__['pkg_resource.version'](*names, **kwargs) or {}
 
 
-def version_cmp(ver1, ver2):
+def version_cmp(ver1, ver2, ignore_epoch=False):
     '''
     .. versionadded:: 2015.5.4
 
@@ -527,13 +533,18 @@ def version_cmp(ver1, ver2):
     ver1 == ver2, and 1 if ver1 > ver2. Return None if there was a problem
     making the comparison.
 
+    ignore_epoch : False
+        Set to ``True`` to ignore the epoch when comparing versions
+
+        .. versionadded:: 2015.8.10,2016.3.2
+
     CLI Example:
 
     .. code-block:: bash
 
         salt '*' pkg.version_cmp '0.2-001' '0.2.0.1-002'
     '''
-    return __salt__['lowpkg.version_cmp'](str(ver1), str(ver2))
+    return __salt__['lowpkg.version_cmp'](ver1, ver2, ignore_epoch=ignore_epoch)
 
 
 def list_pkgs(versions_as_list=False, **kwargs):
@@ -766,6 +777,8 @@ def mod_repo(repo, **kwargs):
 
     # Modify added or existing repo according to the options
     cmd_opt = []
+    global_cmd_opt = []
+    call_refresh = False
 
     if 'enabled' in kwargs:
         cmd_opt.append(kwargs['enabled'] and '--enable' or '--disable')
@@ -779,21 +792,27 @@ def mod_repo(repo, **kwargs):
     if 'gpgcheck' in kwargs:
         cmd_opt.append(kwargs['gpgcheck'] and '--gpgcheck' or '--no-gpgcheck')
 
-    if kwargs.get('gpgautoimport') is True:
-        cmd_opt.append('--gpg-auto-import-keys')
-
     if 'priority' in kwargs:
         cmd_opt.append("--priority={0}".format(kwargs.get('priority', DEFAULT_PRIORITY)))
 
     if 'humanname' in kwargs:
         cmd_opt.append("--name='{0}'".format(kwargs.get('humanname')))
 
-    if cmd_opt:
-        cmd_opt.append(repo)
-        __zypper__.refreshable.xml.call('mr', *cmd_opt)
+    if kwargs.get('gpgautoimport') is True:
+        global_cmd_opt.append('--gpg-auto-import-keys')
+        call_refresh = True
 
-    # If repo nor added neither modified, error should be thrown
-    if not added and not cmd_opt:
+    if cmd_opt:
+        cmd_opt = global_cmd_opt + ['mr'] + cmd_opt + [repo]
+        __zypper__.refreshable.xml.call(*cmd_opt)
+
+    if call_refresh:
+        # when used with "zypper ar --refresh" or "zypper mr --refresh"
+        # --gpg-auto-import-keys is not doing anything
+        # so we need to specifically refresh here with --gpg-auto-import-keys
+        refresh_opts = global_cmd_opt + ['refresh'] + [repo]
+        __zypper__.xml.call(*refresh_opts)
+    elif not added and not cmd_opt:
         raise CommandExecutionError(
             'Specified arguments did not result in modification of repo'
         )
@@ -1533,9 +1552,13 @@ def download(*packages, **kwargs):
             'repository-alias': repo.getAttribute("alias"),
             'path': dld_result.getElementsByTagName("localfile")[0].getAttribute("path"),
         }
-        pkg_ret[_get_first_aggregate_text(dld_result.getElementsByTagName("name"))] = pkg_info
+        if __salt__['lowpkg.checksum'](pkg_info['path']):
+            pkg_ret[_get_first_aggregate_text(dld_result.getElementsByTagName("name"))] = pkg_info
 
     if pkg_ret:
+        failed = [pkg for pkg in packages if pkg not in pkg_ret]
+        if failed:
+            pkg_ret['_error'] = ('The following package(s) failed to download: {0}'.format(', '.join(failed)))
         return pkg_ret
 
     raise CommandExecutionError("Unable to download packages: {0}.".format(', '.join(packages)))

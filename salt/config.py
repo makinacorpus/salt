@@ -229,8 +229,14 @@ VALID_OPTS = {
     # A flag indicating that a master should accept any minion connection without any authentication
     'open_mode': bool,
 
-    # Whether or not processes should be forked when needed. The altnerative is to use threading.
+    # Whether or not processes should be forked when needed. The alternative is to use threading.
     'multiprocessing': bool,
+
+    # Whether or not the salt minion should run scheduled mine updates
+    'mine_enabled': bool,
+
+    # Whether or not scheduled mine updates should be accompanied by a job return for the job cache
+    'mine_return_job': bool,
 
     # Schedule a mine update every n number of seconds
     'mine_interval': int,
@@ -282,7 +288,7 @@ VALID_OPTS = {
     'log_fmt_console': str,
 
     # The format for a given log file
-    'log_fmt_logfile': tuple,
+    'log_fmt_logfile': (tuple, str),
 
     # A dictionary of logging levels
     'log_granular_levels': dict,
@@ -883,6 +889,8 @@ DEFAULT_MINION_OPTS = {
     'auto_accept': True,
     'autosign_timeout': 120,
     'multiprocessing': True,
+    'mine_enabled': True,
+    'mine_return_job': False,
     'mine_interval': 60,
     'ipc_mode': _DFLT_IPC_MODE,
     'ipv6': False,
@@ -1358,11 +1366,24 @@ def _validate_opts(opts):
             # passed.
             return valid_type.__name__
         else:
-            if num_types == 1:
-                return valid_type.__name__
-            elif num_types > 1:
-                ret = ', '.join(x.__name__ for x in valid_type[:-1])
-                ret += ' or ' + valid_type[-1].__name__
+            def get_types(types, type_tuple):
+                for item in type_tuple:
+                    if isinstance(item, tuple):
+                        get_types(types, item)
+                    else:
+                        try:
+                            types.append(item.__name__)
+                        except AttributeError:
+                            log.warning(
+                                'Unable to interpret type %s while validating '
+                                'configuration', item
+                            )
+            types = []
+            get_types(types, valid_type)
+
+            ret = ', '.join(types[:-1])
+            ret += ' or ' + types[-1]
+            return ret
 
     errors = []
 
@@ -1403,7 +1424,7 @@ def _validate_opts(opts):
                 err.format(key,
                            val,
                            type(val).__name__,
-                           format_multi_opt(VALID_OPTS[key].__name__))
+                           format_multi_opt(VALID_OPTS[key]))
             )
 
     # RAET on Windows uses 'win32file.CreateMailslot()' for IPC. Due to this,
@@ -2789,7 +2810,7 @@ def get_id(opts, cache_minion_id=False):
 
     newid = salt.utils.network.generate_minion_id()
     if '__role' in opts and opts.get('__role') == 'minion':
-        log.info('Found minion id from generate_minion_id(): {0}'.format(newid))
+        log.debug('Found minion id from generate_minion_id(): {0}'.format(newid))
     if cache_minion_id and opts.get('minion_id_caching', True):
         _cache_id(newid, id_cache)
     is_ipv4 = newid.count('.') == 3 and not any(c.isalpha() for c in newid)
