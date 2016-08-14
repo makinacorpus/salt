@@ -59,12 +59,13 @@ class GrainsTargetingTest(integration.ShellCase):
         '''
         Tests return of minion using grains targeting on a disconnected minion.
         '''
-        test_ret = 'Minion did not return. [Not connected]'
+        test_ret = 'Minion did not return. [No response]'
 
         # Create a minion key, but do not start the "fake" minion. This mimics a
         # disconnected minion.
         key_file = os.path.join(self.master_opts['pki_dir'], 'minions', 'disconnected')
-        salt.utils.fopen(key_file, 'a').close()
+        with salt.utils.fopen(key_file, 'a'):
+            pass
 
         # ping disconnected minion and ensure it times out and returns with correct message
         try:

@@ -3,6 +3,19 @@
 Installation of packages using OS package managers such as yum or apt-get
 =========================================================================
 
+..note::
+    On minions running systemd>=205, as of version 2015.8.12, 2016.3.3, and
+    Carbon, `systemd-run(1)`_ is now used to isolate commands which modify
+    installed packages from the ``salt-minion`` daemon's control group. This is
+    done to keep systemd from killing the package manager commands spawned by
+    Salt, when Salt updates itself (see ``KillMode`` in the `systemd.kill(5)`_
+    manpage for more information). If desired, usage of `systemd-run(1)`_ can
+    be suppressed by setting a :mod:`config option <salt.modules.config.get>`
+    called ``systemd.use_scope``, with a value of ``False`` (no quotes).
+
+.. _`systemd-run(1)`: https://www.freedesktop.org/software/systemd/man/systemd-run.html
+.. _`systemd.kill(5)`: https://www.freedesktop.org/software/systemd/man/systemd.kill.html
+
 Salt can manage software packages via the pkg state module, packages can be
 set up to be installed, latest, removed and purged. Package management
 declarations are typically rather simple:
@@ -431,7 +444,7 @@ def _find_install_targets(name=None,
             # package's name and version
             err = 'Unable to cache {0}: {1}'
             try:
-                cached_path = __salt__['cp.cache_file'](val)
+                cached_path = __salt__['cp.cache_file'](val, saltenv=kwargs['saltenv'])
             except CommandExecutionError as exc:
                 problems.append(err.format(val, exc))
                 continue
@@ -688,6 +701,9 @@ def installed(
                   - unzip
                   - dos2unix
                   - salt-minion: 2015.8.5-1.el6
+
+        If the version given is the string ``latest``, the latest available
+        package version will be installed à la ``pkg.latest``.
 
     :param bool refresh:
         This parameter controls whether or not the packge repo database is
@@ -1053,8 +1069,24 @@ def installed(
     if not isinstance(version, six.string_types) and version is not None:
         version = str(version)
 
+    was_refreshed = False
+
     if version is not None and version == 'latest':
-        version = __salt__['pkg.latest_version'](name)
+        try:
+            version = __salt__['pkg.latest_version'](name,
+                                                     fromrepo=fromrepo,
+                                                     refresh=refresh)
+        except CommandExecutionError as exc:
+            return {'name': name,
+                    'changes': {},
+                    'result': False,
+                    'comment': 'An error was encountered while checking the '
+                               'newest available version of package(s): {0}'
+                               .format(exc)}
+
+        was_refreshed = refresh
+        refresh = False
+
         # If version is empty, it means the latest version is installed
         # so we grab that version to avoid passing an empty string
         if not version:
@@ -1067,6 +1099,13 @@ def installed(
                         'comment': exc.strerror}
 
     kwargs['allow_updates'] = allow_updates
+
+    # if windows and a refresh
+    # is required, we will have to do a refresh when _find_install_targets
+    # calls pkg.list_pkgs
+    if salt.utils.is_windows():
+        kwargs['refresh'] = refresh
+
     result = _find_install_targets(name, version, pkgs, sources,
                                    fromrepo=fromrepo,
                                    skip_suggestions=skip_suggestions,
@@ -1074,6 +1113,11 @@ def installed(
                                    normalize=normalize,
                                    ignore_epoch=ignore_epoch,
                                    **kwargs)
+
+    if salt.utils.is_windows():
+        was_refreshed = was_refreshed or refresh
+        kwargs.pop('refresh')
+        refresh = False
 
     try:
         (desired, targets, to_unpurge,
@@ -1208,9 +1252,6 @@ def installed(
                                               reinstall=reinstall,
                                               normalize=normalize,
                                               **kwargs)
-
-            if os.path.isfile(rtag) and refresh:
-                os.remove(rtag)
         except CommandExecutionError as exc:
             ret = {'name': name,
                    'changes': {},
@@ -1220,6 +1261,8 @@ def installed(
             if warnings:
                 ret['comment'] += '.' + '. '.join(warnings) + '.'
             return ret
+
+        was_refreshed = was_refreshed or refresh
 
         if isinstance(pkg_ret, dict):
             changes['installed'].update(pkg_ret)
@@ -1265,6 +1308,9 @@ def installed(
                                              and hold_ret[x]['result']]
                         failed_hold = [hold_ret[x] for x in hold_ret
                                        if not hold_ret[x]['result']]
+
+    if os.path.isfile(rtag) and was_refreshed:
+        os.remove(rtag)
 
     if to_unpurge:
         changes['purge_desired'] = __salt__['lowpkg.unpurge'](*to_unpurge)
@@ -2226,7 +2272,8 @@ def mod_init(low):
     if low['fun'] == 'installed' or low['fun'] == 'latest':
         rtag = __gen_rtag()
         if not os.path.exists(rtag):
-            salt.utils.fopen(rtag, 'w+').write('')
+            with salt.utils.fopen(rtag, 'w+'):
+                pass
         return ret
     return False
 
