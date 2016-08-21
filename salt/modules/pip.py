@@ -118,7 +118,7 @@ def _get_pip_bin(bin_env):
     executable itself, or from searching conventional filesystem locations
     '''
     if not bin_env:
-        which_result = __salt__['cmd.which_bin'](['pip', 'pip2', 'pip3', 'pip-python'])
+        which_result = __salt__['cmd.which_bin'](['pip2', 'pip', 'pip-python'])
         if which_result is None:
             raise CommandNotFoundError('Could not find a `pip` binary')
         if salt.utils.is_windows():
@@ -289,14 +289,13 @@ def _process_requirements(requirements, cmd, cwd, saltenv, user):
                 logger.info('request files: {0}'.format(str(reqs)))
 
                 for req_file in reqs:
+                    if not os.path.isabs(req_file):
+                        req_file = os.path.join(cwd, req_file)
 
-                    req_filename = os.path.basename(req_file)
+                    logger.debug('TREQ N CWD: %s -- %s -- for %s', str(treq), str(cwd), str(req_file))
+                    target_path = os.path.join(treq, os.path.basename(req_file))
 
-                    logger.debug('TREQ N CWD: %s -- %s -- for %s', str(treq), str(cwd), str(req_filename))
-                    source_path = os.path.join(cwd, req_filename)
-                    target_path = os.path.join(treq, req_filename)
-
-                    logger.debug('S: %s', source_path)
+                    logger.debug('S: %s', req_file)
                     logger.debug('T: %s', target_path)
 
                     target_base = os.path.dirname(target_path)
@@ -307,9 +306,9 @@ def _process_requirements(requirements, cmd, cwd, saltenv, user):
 
                     if not os.path.exists(target_path):
                         logger.debug(
-                            'Copying %s to %s', source_path, target_path
+                            'Copying %s to %s', req_file, target_path
                         )
-                        __salt__['file.copy'](source_path, target_path)
+                        __salt__['file.copy'](req_file, target_path)
 
                     logger.debug(
                         'Changing ownership of requirements file \'{0}\' to '
@@ -366,11 +365,11 @@ def install(pkgs=None,  # pylint: disable=R0912,R0913,R0914
             allow_external=None,
             allow_unverified=None,
             process_dependency_links=False,
+            __env__=None,
             saltenv='base',
             env_vars=None,
             use_vt=False,
-            trusted_host=None,
-            no_cache_dir=False):
+            trusted_host=None):
     '''
     Install packages with pip
 
@@ -544,9 +543,6 @@ def install(pkgs=None,  # pylint: disable=R0912,R0913,R0914
     use_vt
         Use VT terminal emulation (see output while installing)
 
-    no_cache_dir
-        Disable the cache.
-
     CLI Example:
 
     .. code-block:: bash
@@ -583,6 +579,16 @@ def install(pkgs=None,  # pylint: disable=R0912,R0913,R0914
             'bin_env refers to a virtualenv, there is no need to activate '
             'that virtualenv before using pip to install packages in it.'
         )
+
+    if isinstance(__env__, string_types):
+        salt.utils.warn_until(
+            'Carbon',
+            'Passing a salt environment should be done using \'saltenv\' '
+            'not \'__env__\'. This functionality will be removed in Salt '
+            'Carbon.'
+        )
+        # Backwards compatibility
+        saltenv = __env__
 
     pip_bin = _get_pip_bin(bin_env)
 
@@ -746,9 +752,6 @@ def install(pkgs=None,  # pylint: disable=R0912,R0913,R0914
     if no_download:
         cmd.append('--no-download')
 
-    if no_cache_dir:
-        cmd.append('--no-cache-dir')
-
     if pre_releases:
         # Check the locally installed pip version
         pip_version = version(pip_bin)
@@ -864,6 +867,7 @@ def uninstall(pkgs=None,
               user=None,
               no_chown=False,
               cwd=None,
+              __env__=None,
               saltenv='base',
               use_vt=False):
     '''
@@ -918,6 +922,16 @@ def uninstall(pkgs=None,
     pip_bin = _get_pip_bin(bin_env)
 
     cmd = [pip_bin, 'uninstall', '-y']
+
+    if isinstance(__env__, string_types):
+        salt.utils.warn_until(
+            'Carbon',
+            'Passing a salt environment should be done using \'saltenv\' '
+            'not \'__env__\'. This functionality will be removed in Salt '
+            'Carbon.'
+        )
+        # Backwards compatibility
+        saltenv = __env__
 
     cleanup_requirements, error = _process_requirements(
         requirements=requirements, cmd=cmd, saltenv=saltenv, user=user,

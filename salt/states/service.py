@@ -64,6 +64,7 @@ import time
 
 # Import Salt libs
 from salt.exceptions import CommandExecutionError
+
 __virtualname__ = 'service'
 
 
@@ -549,8 +550,6 @@ def mod_watch(name,
 
     init_delay
         Add a sleep command (in seconds) before the service is restarted/reloaded
-    force
-        Forcefully reload service
     '''
     ret = {'name': name,
            'changes': {},

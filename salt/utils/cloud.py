@@ -213,14 +213,13 @@ def minion_config(opts, vm_):
     Return a minion's configuration for the provided options and VM
     '''
 
-    # Let's get a copy of the salt minion default options
-    minion = copy.deepcopy(salt.config.DEFAULT_MINION_OPTS)
-    # Some default options are Null, let's set a reasonable default
-    minion.update(
-        log_level='info',
-        log_level_logfile='info',
-        hash_type='sha256'
-    )
+    # Don't start with a copy of the default minion opts; they're not always
+    # what we need. Some default options are Null, let's set a reasonable default
+    minion = {
+        'master': 'salt',
+        'log_level': 'info',
+        'hash_type': 'sha256',
+    }
 
     # Now, let's update it to our needs
     minion['id'] = vm_['name']
@@ -832,7 +831,8 @@ def wait_for_winrm(host, port, username, password, timeout=900):
         trycount += 1
         try:
             s = winrm.Session(host, auth=(username, password), transport='ssl')
-            s.protocol.set_timeout(15)
+            if hasattr(s.protocol, 'set_timeout'):
+                s.protocol.set_timeout(15)
             log.trace('WinRM endpoint url: {0}'.format(s.url))
             r = s.run_cmd('sc query winrm')
             if r.status_code == 0:
@@ -1257,8 +1257,7 @@ def deploy_script(host,
 
             if root_cmd('test -e \'{0}\''.format(tmp_dir), tty, sudo,
                         allow_failure=True, **ssh_kwargs):
-                ret = root_cmd(('sh -c "( mkdir -p \'{0}\' &&'
-                                ' chmod 700 \'{0}\' )"').format(tmp_dir),
+                ret = root_cmd(('sh -c "( mkdir -p -m 700 \'{0}\' )"').format(tmp_dir),
                                tty, sudo, **ssh_kwargs)
                 if ret:
                     raise SaltCloudSystemExit(
@@ -1267,15 +1266,16 @@ def deploy_script(host,
                     )
             if sudo:
                 comps = tmp_dir.lstrip('/').rstrip('/').split('/')
-                if len(comps) > 1 or comps[0] != 'tmp':
-                    ret = root_cmd(
-                        'chown {0} \'{1}\''.format(username, tmp_dir),
-                        tty, sudo, **ssh_kwargs
-                    )
-                    if ret:
-                        raise SaltCloudSystemExit(
-                            'Cant set {0} ownership on {1}'.format(
-                                username, tmp_dir))
+                if len(comps) > 0:
+                    if len(comps) > 1 or comps[0] != 'tmp':
+                        ret = root_cmd(
+                            'chown {0} "{1}"'.format(username, tmp_dir),
+                            tty, sudo, **ssh_kwargs
+                        )
+                        if ret:
+                            raise SaltCloudSystemExit(
+                                'Cant set {0} ownership on {1}'.format(
+                                    username, tmp_dir))
 
             if not isinstance(file_map, dict):
                 file_map = {}
@@ -1326,7 +1326,7 @@ def deploy_script(host,
                                tty, sudo, **ssh_kwargs)
                 if ret:
                     raise SaltCloudSystemExit(
-                        'Cant set perms on {0}/minion.pem'.format(tmp_dir))
+                        'Can\'t set perms on {0}/minion.pem'.format(tmp_dir))
             if minion_pub:
                 ssh_file(opts, '{0}/minion.pub'.format(tmp_dir), minion_pub, ssh_kwargs)
 
@@ -1404,7 +1404,7 @@ def deploy_script(host,
                 )
                 if ret:
                     raise SaltCloudSystemExit(
-                        'Cant set perms on {0}'.format(
+                        'Can\'t set perms on {0}'.format(
                             preseed_minion_keys_tempdir))
                 if ssh_kwargs['username'] != 'root':
                     root_cmd(
@@ -1430,7 +1430,7 @@ def deploy_script(host,
                     )
                     if ret:
                         raise SaltCloudSystemExit(
-                            'Cant set owneship for {0}'.format(
+                            'Can\'t set ownership for {0}'.format(
                                 preseed_minion_keys_tempdir))
 
             # The actual deploy script
@@ -1444,7 +1444,7 @@ def deploy_script(host,
                     tty, sudo, **ssh_kwargs)
                 if ret:
                     raise SaltCloudSystemExit(
-                        'Cant set perms on {0}/deploy.sh'.format(tmp_dir))
+                        'Can\'t set perms on {0}/deploy.sh'.format(tmp_dir))
 
             newtimeout = timeout - (time.mktime(time.localtime()) - starttime)
             queue = None
@@ -1921,7 +1921,7 @@ def sftp_file(dest_path, contents=None, kwargs=None, local_file=None):
         if os.path.isdir(local_file):
             put_args = ['-r']
 
-    log.debug('Uploading {0} to {1} (sfcp)'.format(dest_path, kwargs.get('hostname')))
+    log.debug('Uploading {0} to {1} (sftp)'.format(dest_path, kwargs.get('hostname')))
 
     ssh_args = [
         # Don't add new hosts to the host key database
@@ -2555,9 +2555,8 @@ def request_minion_cachedir(
     if base is None:
         base = os.path.join(__opts__['cachedir'], 'cloud')
 
-    if not fingerprint:
-        if pubkey is not None:
-            fingerprint = salt.utils.pem_finger(key=pubkey, sum_type=(opts and opts.get('hash_type') or 'sha256'))
+    if not fingerprint and pubkey is not None:
+        fingerprint = salt.utils.pem_finger(key=pubkey, sum_type=(opts and opts.get('hash_type') or 'sha256'))
 
     init_cachedir(base)
 
@@ -2866,10 +2865,10 @@ def cache_node(node, provider, opts):
     if 'update_cachedir' not in opts or not opts['update_cachedir']:
         return
 
-    if not os.path.exists(os.path.join(__opts__['cachedir'], 'cloud', 'active')):
+    base = os.path.join(__opts__['cachedir'], 'cloud', 'active')
+    if not os.path.exists(base):
         init_cachedir()
 
-    base = os.path.join(__opts__['cachedir'], 'cloud', 'active')
     provider, driver = provider.split(':')
     prov_dir = os.path.join(base, driver, provider)
     if not os.path.exists(prov_dir):
@@ -3138,7 +3137,7 @@ def check_key_path_and_mode(provider, key_path):
 
     Returns True or False.
 
-    .. versionadded:: Boron
+    .. versionadded:: 2016.3.0
 
     provider
         The provider name that the key_path to check belongs to.
