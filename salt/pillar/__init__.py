@@ -668,8 +668,6 @@ class Pillar(object):
         Extract the sls pillar files from the matches and render them into the
         pillar
         '''
-        if errors is None:
-            errors = []
         pillar = copy.copy(self.pillar_override)
         if errors is None:
             errors = []
