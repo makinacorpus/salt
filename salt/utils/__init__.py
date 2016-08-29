@@ -2604,8 +2604,7 @@ def get_group_list(user=None, include_default=True):
         raise Exception
     if hasattr(os, 'getgrouplist'):
         # Try os.getgrouplist, available in python >= 3.3
-        # XXX MAKINA: harmful debug (git.latest)
-        # log.trace('Trying os.getgrouplist for \'{0}\''.format(user))
+        log.trace('Trying os.getgrouplist for \'{0}\''.format(user))
         try:
             group_names = [
                 grp.getgrgid(grpid).gr_name for grpid in
@@ -2615,8 +2614,7 @@ def get_group_list(user=None, include_default=True):
             pass
     else:
         # Try pysss.getgrouplist
-        # XXX MAKINA: harmful debug (git.latest)
-        # log.trace('Trying pysss.getgrouplist for \'{0}\''.format(user))
+        log.trace('Trying pysss.getgrouplist for \'{0}\''.format(user))
         try:
             import pysss  # pylint: disable=import-error
             group_names = list(pysss.getgrouplist(user))
@@ -2626,8 +2624,7 @@ def get_group_list(user=None, include_default=True):
         # Fall back to generic code
         # Include the user's default group to behave like
         # os.getgrouplist() and pysss.getgrouplist() do
-        # XXX MAKINA: harmful debug (git.latest)
-        # log.trace('Trying generic group list for \'{0}\''.format(user))
+        log.trace('Trying generic group list for \'{0}\''.format(user))
         group_names = [g.gr_name for g in grp.getgrall() if user in g.gr_mem]
         try:
             default_group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
@@ -2648,8 +2645,7 @@ def get_group_list(user=None, include_default=True):
         except KeyError:
             # If for some reason the user does not have a default group
             pass
-    # XXX MAKINA: harmful debug (git.latest)
-    # log.trace('Group list for user \'{0}\': \'{1}\''.format(user, sorted(ugroups)))
+    log.trace('Group list for user \'{0}\': \'{1}\''.format(user, sorted(ugroups)))
     return sorted(ugroups)
 
 
