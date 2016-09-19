@@ -649,6 +649,9 @@ def wait_for_port(host, port=22, timeout=900, gateway=None):
                 sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
             else:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except socket.error:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
             sock.settimeout(30)
             sock.connect((test_ssh_host, int(test_ssh_port)))
             # Stop any remaining reads/writes on the socket
@@ -1866,9 +1869,12 @@ def scp_file(dest_path, contents=None, kwargs=None, local_file=None):
             )
         )
 
-    if socket.inet_pton(socket.AF_INET6, kwargs['hostname']):
-        ipaddr = '[{0}]'.format(kwargs['hostname'])
-    else:
+    try:
+        if socket.inet_pton(socket.AF_INET6, kwargs['hostname']):
+            ipaddr = '[{0}]'.format(kwargs['hostname'])
+        else:
+            ipaddr = kwargs['hostname']
+    except socket.error:
         ipaddr = kwargs['hostname']
 
     cmd = (
@@ -1975,9 +1981,12 @@ def sftp_file(dest_path, contents=None, kwargs=None, local_file=None):
             )
         )
 
-    if socket.inet_pton(socket.AF_INET6, kwargs['hostname']):
-        ipaddr = '[{0}]'.format(kwargs['hostname'])
-    else:
+    try:
+        if socket.inet_pton(socket.AF_INET6, kwargs['hostname']):
+            ipaddr = '[{0}]'.format(kwargs['hostname'])
+        else:
+            ipaddr = kwargs['hostname']
+    except socket.error:
         ipaddr = kwargs['hostname']
 
     cmd = 'echo "put {0} {1} {2}" | sftp {3} {4[username]}@{5}'.format(
