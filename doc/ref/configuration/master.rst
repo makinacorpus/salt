@@ -197,6 +197,19 @@ an alternative root.
     :conf_master:`log_file`, :conf_master:`autosign_file`,
     :conf_master:`autoreject_file`, :conf_master:`pidfile`.
 
+.. conf_master:: conf_file
+
+``conf_file``
+-------------
+
+Default: ``/etc/salt/master``
+
+The path to the master's configuration file.
+
+.. code-block:: yaml
+
+    conf_file: /etc/salt/master
+
 .. conf_master:: pki_dir
 
 ``pki_dir``
@@ -274,11 +287,28 @@ Verify and set permissions on configuration directories at startup.
 
 Default: ``24``
 
-Set the number of hours to keep old job information.
+Set the number of hours to keep old job information. Note that setting this option
+to ``0`` disables the cache cleaner.
 
 .. code-block:: yaml
 
     keep_jobs: 24
+
+.. conf_master:: gather_job_timeout
+
+``gather_job_timeout``
+----------------------
+
+.. versionadded:: 2014.7.0
+
+Default: ``10``
+
+The number of seconds to wait when the client is requesting information
+about running jobs.
+
+.. code-block:: yaml
+
+    gather_job_timeout: 10
 
 .. conf_master:: timeout
 
@@ -370,12 +400,32 @@ grains for the master.
 
 Default: ``True``
 
-The master maintains a job cache. While this is a great addition, it can be
-a burden on the master for larger deployments (over 5000 minions).
+The master maintains a temporary job cache. While this is a great addition, it
+can be a burden on the master for larger deployments (over 5000 minions).
 Disabling the job cache will make previously executed jobs unavailable to
 the jobs system and is not generally recommended. Normally it is wise to make
 sure the master has access to a faster IO system or a tmpfs is mounted to the
 jobs dir.
+
+.. code-block:: yaml
+
+    job_cache: True
+
+.. note::
+
+    Setting the ``job_cache`` to ``False`` will not cache minion returns, but
+    the JID directory for each job is still created. The creation of the JID
+    directories is necessary because Salt uses those directories to check for
+    JID collisions. By setting this option to ``False``, the job cache
+    directory, which is ``/var/cache/salt/master/jobs/`` by default, will be
+    smaller, but the JID directories will still be present.
+
+    Note that the :conf_master:`keep_jobs` option can be set to a lower value,
+    such as ``1``, to limit the number of hours jobs are stored in the job
+    cache. (The default is 24 hours.)
+
+    Please see the :ref:`Managing the Job Cache <managing_the_job_cache>`
+    documentation for more information.
 
 .. conf_master:: minion_data_cache
 
@@ -481,6 +531,23 @@ Store all event returns _except_ the tags in a blacklist.
     event_return_blacklist:
       - salt/master/not_this_tag
       - salt/master/or_this_one
+
+.. conf_master:: max_event_size
+
+``max_event_size``
+------------------
+
+.. versionadded:: 2014.7.0
+
+Default: ``1048576``
+
+Passing very large events can cause the minion to consume large amounts of
+memory. This value tunes the maximum size of a message allowed onto the
+master event bus. The value is expressed in bytes.
+
+.. code-block:: yaml
+
+    max_event_size: 1048576
 
 .. conf_master:: master_job_cache
 
@@ -970,6 +1037,40 @@ The renderer to use on the minions to render the state data.
 
     renderer: yaml_jinja
 
+.. conf_master:: jinja_trim_blocks
+
+``jinja_trim_blocks``
+---------------------
+
+.. versionadded:: 2014.1.0
+
+Default: ``False``
+
+If this is set to ``True``, the first newline after a Jinja block is
+removed (block, not variable tag!). Defaults to ``False`` and corresponds
+to the Jinja environment init variable ``trim_blocks``.
+
+.. code-block:: yaml
+
+    jinja_trim_blocks: False
+
+.. conf_master:: jinja_lstrip_blocks
+
+``jinja_lstrip_blocks``
+-----------------------
+
+.. versionadded:: 2014.1.0
+
+Default: ``False``
+
+If this is set to ``True``, leading spaces and tabs are stripped from the
+start of a line to a block. Defaults to ``False`` and corresponds to the
+Jinja environment init variable ``lstrip_blocks``.
+
+.. code-block:: yaml
+
+    jinja_lstrip_blocks: False
+
 .. conf_master:: failhard
 
 ``failhard``
@@ -1102,6 +1203,10 @@ Example:
     fileserver_backend:
       - roots
       - git
+
+.. note::
+    For masterless Salt, this parameter must be specified in the minion config
+    file.
 
 .. conf_master:: fileserver_followsymlinks
 
@@ -1269,6 +1374,10 @@ Example:
       prod:
         - /srv/salt/prod/services
         - /srv/salt/prod/states
+
+.. note::
+    For masterless Salt, this parameter must be specified in the minion config
+    file.
 
 git: Git Remote File Server Backend
 -----------------------------------
@@ -2106,6 +2215,26 @@ configuration is the same as :conf_master:`file_roots`:
         - /srv/pillar/dev
       prod:
         - /srv/pillar/prod
+
+.. conf_master:: pillar_opts
+
+``pillar_opts``
+---------------
+
+Default: ``False``
+
+The ``pillar_opts`` option adds the master configuration file data to a dict in
+the pillar called ``master``. This can be used to set simple configurations in
+the master config file that can then be used on minions.
+
+Note that setting this option to ``True`` means the master config file will be
+included in all minion's pillars. While this makes global configuration of services
+and systems easy, it may not be desired if sensitive data is stored in the master
+configuration.
+
+.. code-block:: yaml
+
+    pillar_opts: False
 
 .. _master-configuration-ext-pillar:
 

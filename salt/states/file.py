@@ -1099,7 +1099,10 @@ def managed(name,
 
     source
         The source file to download to the minion, this source file can be
-        hosted on either the salt master server, or on an HTTP or FTP server.
+        hosted on either the salt master server (``salt://``), the salt minion
+        local file system (``/``), or on an HTTP or FTP server (``http(s)://``,
+        ``ftp://``).
+
         Both HTTPS and HTTP are supported as well as downloading directly
         from Amazon S3 compatible URLs with both pre-configured and automatic
         IAM credentials. (see s3.get state documentation)
@@ -1810,31 +1813,31 @@ def directory(name,
         .. code-block:: yaml
 
             /var/log/httpd:
-                file.directory:
+              file.directory:
                 - user: root
                 - group: root
                 - dir_mode: 755
                 - file_mode: 644
                 - recurse:
-                    - user
-                    - group
-                    - mode
+                  - user
+                  - group
+                  - mode
 
         Leave files or directories unchanged:
 
         .. code-block:: yaml
 
             /var/log/httpd:
-                file.directory:
+              file.directory:
                 - user: root
                 - group: root
                 - dir_mode: 755
                 - file_mode: 644
                 - recurse:
-                    - user
-                    - group
-                    - mode
-                    - ignore_dirs
+                  - user
+                  - group
+                  - mode
+                  - ignore_dirs
 
         .. versionadded:: 2015.5.0
 
@@ -2355,7 +2358,6 @@ def recurse(name,
             ret['changes'][path] = _ret['changes']
 
     def manage_file(path, source):
-        source = salt.utils.url.escape(source)
         if clean and os.path.exists(path) and os.path.isdir(path):
             _ret = {'name': name, 'changes': {}, 'result': True, 'comment': ''}
             if __opts__['test']:
@@ -3451,17 +3453,21 @@ def append(name,
               - append
               - template: jinja
               - sources:
-                  - salt://motd/devops-messages.tmpl
-                  - salt://motd/hr-messages.tmpl
-                  - salt://motd/general-messages.tmpl
+                - salt://motd/devops-messages.tmpl
+                - salt://motd/hr-messages.tmpl
+                - salt://motd/general-messages.tmpl
 
     .. versionadded:: 0.9.5
     '''
-    name = os.path.expanduser(name)
+    ret = {'name': name,
+           'changes': {},
+           'result': False,
+           'comment': ''}
 
-    ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
     if not name:
         return _error(ret, 'Must provide name to file.append')
+
+    name = os.path.expanduser(name)
 
     if sources is None:
         sources = []
@@ -3513,17 +3519,16 @@ def append(name,
 
     with salt.utils.fopen(name, 'rb') as fp_:
         slines = fp_.readlines()
+        slines = [item.rstrip() for item in slines]
 
-    count = 0
-    test_lines = []
-
+    append_lines = []
     try:
         for chunk in text:
             if ignore_whitespace:
                 if __salt__['file.search'](
-                    name,
-                    salt.utils.build_whitespace_split_regex(chunk),
-                    multiline=True):
+                        name,
+                        salt.utils.build_whitespace_split_regex(chunk),
+                        multiline=True):
                     continue
             elif __salt__['file.search'](
                     name,
@@ -3531,37 +3536,39 @@ def append(name,
                     multiline=True):
                 continue
 
-            lines = chunk.splitlines()
+            for line_item in chunk.splitlines():
+                append_lines.append('{0}'.format(line_item))
 
-            for line in lines:
-                if __opts__['test']:
-                    ret['comment'] = 'File {0} is set to be updated'.format(name)
-                    ret['result'] = None
-                    test_lines.append('{0}\n'.format(line))
-                else:
-                    __salt__['file.append'](name, line)
-                count += 1
     except TypeError:
         return _error(ret, 'No text found to append. Nothing appended')
 
     if __opts__['test']:
-        nlines = slines + test_lines
+        ret['comment'] = 'File {0} is set to be updated'.format(name)
         ret['result'] = None
+        nlines = list(slines)
+        nlines.extend(append_lines)
         if slines != nlines:
             if not salt.utils.istextfile(name):
                 ret['changes']['diff'] = 'Replace binary file'
             else:
                 # Changes happened, add them
                 ret['changes']['diff'] = (
-                    ''.join(difflib.unified_diff(slines, nlines))
+                    '\n'.join(difflib.unified_diff(slines, nlines))
                 )
         else:
             ret['comment'] = 'File {0} is in correct state'.format(name)
             ret['result'] = True
         return ret
 
+    if append_lines:
+        __salt__['file.append'](name, args=append_lines)
+        ret['comment'] = 'Appended {0} lines'.format(len(append_lines))
+    else:
+        ret['comment'] = 'File {0} is in correct state'.format(name)
+
     with salt.utils.fopen(name, 'rb') as fp_:
         nlines = fp_.readlines()
+        nlines = [item.rstrip(os.linesep) for item in nlines]
 
     if slines != nlines:
         if not salt.utils.istextfile(name):
@@ -3569,14 +3576,10 @@ def append(name,
         else:
             # Changes happened, add them
             ret['changes']['diff'] = (
-                ''.join(difflib.unified_diff(slines, nlines))
-            )
+                '\n'.join(difflib.unified_diff(slines, nlines)))
 
-    if count:
-        ret['comment'] = 'Appended {0} lines'.format(count)
-    else:
-        ret['comment'] = 'File {0} is in correct state'.format(name)
     ret['result'] = True
+
     return ret
 
 
@@ -3626,9 +3629,9 @@ def prepend(name,
               - prepend
               - template: jinja
               - sources:
-                  - salt://motd/devops-messages.tmpl
-                  - salt://motd/hr-messages.tmpl
-                  - salt://motd/general-messages.tmpl
+                - salt://motd/devops-messages.tmpl
+                - salt://motd/hr-messages.tmpl
+                - salt://motd/general-messages.tmpl
 
     .. versionadded:: 2014.7.0
     '''
@@ -3998,6 +4001,14 @@ def copy(
 
         If the name is a directory then place the file inside the named
         directory
+
+    .. note::
+        The copy function accepts paths that are local to the Salt minion.
+        This function does not support salt://, http://, or the other
+        additional file paths that are supported by :mod:`states.file.managed
+        <salt.states.file.managed>` and :mod:`states.file.recurse
+        <salt.states.file.recurse>`.
+
     '''
     name = os.path.expanduser(name)
     source = os.path.expanduser(source)
@@ -4380,7 +4391,7 @@ def serialize(name,
         template can result in YAML formatting issues due to the newlines
         causing indentation mismatches.
 
-        .. versionadded:: FIXME
+        .. versionadded:: 2015.8.0
 
     formatter
         Write the data as this format. Supported output formats:
@@ -4657,12 +4668,12 @@ def mknod(name, ntype, major=0, minor=0, user=None, group=None, mode='0600'):
             - group: root
             - mode: 660
 
-       /dev/fifo:
-         file.mknod:
-           - ntype: p
-           - user: root
-           - group: root
-           - mode: 660
+        /dev/fifo:
+          file.mknod:
+            - ntype: p
+            - user: root
+            - group: root
+            - mode: 660
 
     .. versionadded:: 0.17.0
     '''

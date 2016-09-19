@@ -418,7 +418,6 @@ class GitProvider(object):
                         # Lock file is empty, set pid to 0 so it evaluates as
                         # False.
                         pid = 0
-                #if self.opts.get("gitfs_global_lock") or pid and pid_exists(int(pid)):
                 global_lock_key = self.role + '_global_lock'
                 lock_file = self._get_lock_file(lock_type=lock_type)
                 if self.opts[global_lock_key]:
@@ -442,7 +441,7 @@ class GitProvider(object):
                                     'by another master.')
                     log.warning(msg)
                     if failhard:
-                        raise
+                        raise exc
                     return
                 elif pid and pid_exists(pid):
                     log.warning('Process %d has a %s %s lock (%s)',
@@ -1045,11 +1044,14 @@ class Pygit2(GitProvider):
                             return None
                         remote_head = 'refs/remotes/origin/' + branch_name
                         if remote_head not in refs:
-                            log.error(
-                                'Unable to find remote ref \'{0}\' in {1} remote '
-                                '\'{2}\''.format(head_ref, self.role, self.id)
-                            )
-                            return None
+                            # No remote ref for HEAD exists. This can happen in
+                            # the first-time git_pillar checkout when when the
+                            # remote repo does not have a master branch. Since
+                            # we need a HEAD reference to keep pygit2 from
+                            # throwing an error, and none exists in
+                            # refs/remotes/origin, we'll just point HEAD at the
+                            # remote_ref.
+                            remote_head = remote_ref
                         self.repo.create_reference(
                             head_ref,
                             self.repo.lookup_reference(remote_head).target
@@ -1438,7 +1440,7 @@ class Pygit2(GitProvider):
             return None
         try:
             commit = self.repo.revparse_single(tgt_ref)
-        except (KeyError, TypeError):
+        except (KeyError, TypeError, ValueError):
             # Not a valid commit, likely not a commit SHA
             pass
         else:
@@ -1833,9 +1835,7 @@ class Dulwich(GitProvider):  # pylint: disable=abstract-method
         # SHA-1 hashes.
         if not self.env_is_exposed(tgt_env):
             return None
-        try:
-            int(tgt_ref, 16)
-        except ValueError:
+        elif not salt.utils.is_hex(tgt_ref):
             # Not hexidecimal, likely just a non-matching environment
             return None
 
@@ -2535,7 +2535,8 @@ class GitFS(GitBase):
         '''
         fnd = {'path': '',
                'rel': ''}
-        if os.path.isabs(path) or tgt_env not in self.envs():
+        if os.path.isabs(path) or \
+                (not salt.utils.is_hex(tgt_env) and tgt_env not in self.envs()):
             return fnd
 
         dest = os.path.join(self.cache_root, 'refs', tgt_env, path)
@@ -2715,7 +2716,8 @@ class GitFS(GitBase):
             return cache_match
         if refresh_cache:
             ret = {'files': set(), 'symlinks': {}, 'dirs': set()}
-            if load['saltenv'] in self.envs():
+            if salt.utils.is_hex(load['saltenv']) \
+                    or load['saltenv'] in self.envs():
                 for repo in self.remotes:
                     repo_files, repo_symlinks = repo.file_list(load['saltenv'])
                     ret['files'].update(repo_files)
@@ -2761,7 +2763,8 @@ class GitFS(GitBase):
             )
             load['saltenv'] = load.pop('env')
 
-        if load['saltenv'] not in self.envs():
+        if not salt.utils.is_hex(load['saltenv']) \
+                and load['saltenv'] not in self.envs():
             return {}
         if 'prefix' in load:
             prefix = load['prefix'].strip('/')

@@ -153,6 +153,17 @@ def is_empty(filename):
         return False
 
 
+def is_hex(value):
+    '''
+    Returns True if value is a hexidecimal string, otherwise returns False
+    '''
+    try:
+        int(value, 16)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def get_color_theme(theme):
     '''
     Return the color theme to use
@@ -2027,11 +2038,7 @@ def alias_function(fun, name, doc=None):
     if doc and isinstance(doc, six.string_types):
         alias_fun.__doc__ = doc
     else:
-        if six.PY3:
-            orig_name = fun.__name__
-        else:
-            orig_name = fun.func_name
-
+        orig_name = fun.__name__
         alias_msg = ('\nThis function is an alias of '
                      '``{0}``.\n'.format(orig_name))
         alias_fun.__doc__ = alias_msg + fun.__doc__
@@ -2272,7 +2279,7 @@ def kwargs_warn_until(kwargs,
         )
 
 
-def version_cmp(pkg1, pkg2):
+def version_cmp(pkg1, pkg2, ignore_epoch=False):
     '''
     Compares two version strings using distutils.version.LooseVersion. This is
     a fallback for providers which don't have a version comparison utility
@@ -2280,6 +2287,10 @@ def version_cmp(pkg1, pkg2):
     version2, and 1 if version1 > version2. Return None if there was a problem
     making the comparison.
     '''
+    normalize = lambda x: str(x).split(':', 1)[-1] if ignore_epoch else str(x)
+    pkg1 = normalize(pkg1)
+    pkg2 = normalize(pkg2)
+
     try:
         # pylint: disable=no-member
         if distutils.version.LooseVersion(pkg1) < \
@@ -2296,22 +2307,25 @@ def version_cmp(pkg1, pkg2):
     return None
 
 
-def compare_versions(ver1='', oper='==', ver2='', cmp_func=None):
+def compare_versions(ver1='',
+                     oper='==',
+                     ver2='',
+                     cmp_func=None,
+                     ignore_epoch=False):
     '''
     Compares two version numbers. Accepts a custom function to perform the
     cmp-style version comparison, otherwise uses version_cmp().
     '''
     cmp_map = {'<': (-1,), '<=': (-1, 0), '==': (0,),
                '>=': (0, 1), '>': (1,)}
-    if oper not in ['!='] and oper not in cmp_map:
-        log.error('Invalid operator "{0}" for version '
-                  'comparison'.format(oper))
+    if oper not in ('!=',) and oper not in cmp_map:
+        log.error('Invalid operator \'%s\' for version comparison', oper)
         return False
 
     if cmp_func is None:
         cmp_func = version_cmp
 
-    cmp_result = cmp_func(ver1, ver2)
+    cmp_result = cmp_func(ver1, ver2, ignore_epoch=ignore_epoch)
     if cmp_result is None:
         return False
 
@@ -2809,7 +2823,7 @@ def to_str(s, encoding=None):
     else:
         if isinstance(s, bytearray):
             return str(s)
-        if isinstance(s, unicode):
+        if isinstance(s, unicode):  # pylint: disable=incompatible-py3-code
             return s.encode(encoding or __salt_system_encoding__)
         raise TypeError('expected str, bytearray, or unicode')
 
@@ -2840,7 +2854,7 @@ def to_unicode(s, encoding=None):
     else:
         if isinstance(s, str):
             return s.decode(encoding or __salt_system_encoding__)
-        return unicode(s)
+        return unicode(s)  # pylint: disable=incompatible-py3-code
 
 
 def is_list(value):
