@@ -601,9 +601,8 @@ class TestDaemon(object):
 
         for entry in ('master', 'minion', 'sub_minion', 'syndic_master'):
             computed_config = copy.deepcopy(locals()['{0}_opts'.format(entry)])
-            salt.utils.fopen(os.path.join(TMP_CONF_DIR, entry), 'w').write(
-                yaml.dump(computed_config, default_flow_style=False)
-            )
+            with salt.utils.fopen(os.path.join(TMP_CONF_DIR, entry), 'w') as fp_:
+                fp_.write(yaml.dump(computed_config, default_flow_style=False))
         # <---- Transcribe Configuration -----------------------------------------------------------------------------
 
         # ----- Verify Environment ---------------------------------------------------------------------------------->
@@ -724,14 +723,13 @@ class TestDaemon(object):
         sync_needed = self.parser.options.clean
         if self.parser.options.clean is False:
             def sumfile(fpath):
-                # Since we will be doing this for small files, it should be ok
-                fobj = salt.utils.fopen(fpath)
                 m = md5()
-                while True:
-                    d = fobj.read(8096)
-                    if not d:
-                        break
-                    m.update(d)
+                with salt.utils.fopen(fpath) as fobj:
+                    while True:
+                        d = fobj.read(8096)
+                        if not d:
+                            break
+                        m.update(d)
                 return m.hexdigest()
             # Since we're not cleaning up, let's see if modules are already up
             # to date so we don't need to re-sync them
@@ -1211,19 +1209,19 @@ class ShellCase(AdaptedConfigurationTestCaseMixIn, ShellTestCase):
     _script_dir_ = SCRIPT_DIR
     _python_executable_ = PYEXEC
 
-    def run_salt(self, arg_str, with_retcode=False, catch_stderr=False):
+    def run_salt(self, arg_str, with_retcode=False, catch_stderr=False, timeout=15):  # pylint: disable=W0221
         '''
         Execute salt
         '''
         arg_str = '-c {0} {1}'.format(self.get_config_dir(), arg_str)
         return self.run_script('salt', arg_str, with_retcode=with_retcode, catch_stderr=catch_stderr)
 
-    def run_ssh(self, arg_str, with_retcode=False, catch_stderr=False):
+    def run_ssh(self, arg_str, with_retcode=False, catch_stderr=False, timeout=25):  # pylint: disable=W0221
         '''
         Execute salt-ssh
         '''
         arg_str = '-c {0} -i --priv {1} --roster-file {2} --out=json localhost {3}'.format(self.get_config_dir(), os.path.join(TMP_CONF_DIR, 'key_test'), os.path.join(TMP_CONF_DIR, 'roster'), arg_str)
-        return self.run_script('salt-ssh', arg_str, with_retcode=with_retcode, catch_stderr=catch_stderr, raw=True)
+        return self.run_script('salt-ssh', arg_str, with_retcode=with_retcode, catch_stderr=catch_stderr, timeout=timeout, raw=True)
 
     def run_run(self, arg_str, with_retcode=False, catch_stderr=False, async=False, timeout=60, config_dir=None):
         '''
@@ -1356,7 +1354,7 @@ class SSHCase(ShellCase):
         return '{0} {1}'.format(function, ' '.join(arg))
 
     def run_function(self, function, arg=(), timeout=25, **kwargs):
-        ret = self.run_ssh(self._arg_str(function, arg))
+        ret = self.run_ssh(self._arg_str(function, arg), timeout=timeout)
         try:
             return json.loads(ret)['localhost']
         except Exception:

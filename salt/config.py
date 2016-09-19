@@ -39,6 +39,7 @@ import salt.utils.xdg
 import salt.exceptions
 import salt.utils.sdb
 from salt.utils.locales import sdecode
+import salt.defaults.exitcodes
 
 log = logging.getLogger(__name__)
 
@@ -542,6 +543,7 @@ VALID_OPTS = {
     'syndic_master': (string_types, list),
     'runner_dirs': list,
     'client_acl': dict,
+    'client_acl_verify': bool,
     'client_acl_blacklist': dict,
     'sudo_acl': bool,
     'external_auth': dict,
@@ -703,6 +705,7 @@ VALID_OPTS = {
     'ssh_passwd': str,
     'ssh_port': str,
     'ssh_sudo': bool,
+    'ssh_sudo_user': str,
     'ssh_timeout': float,
     'ssh_user': str,
     'ssh_scan_ports': str,
@@ -1095,6 +1098,7 @@ DEFAULT_MASTER_OPTS = {
     'runner_dirs': [],
     'outputter_dirs': [],
     'client_acl': {},
+    'client_acl_verify': True,
     'client_acl_blacklist': {},
     'sudo_acl': False,
     'external_auth': {},
@@ -1197,6 +1201,7 @@ DEFAULT_MASTER_OPTS = {
     'ssh_passwd': '',
     'ssh_port': '22',
     'ssh_sudo': False,
+    'ssh_sudo_user': '',
     'ssh_timeout': 60,
     'ssh_user': 'root',
     'ssh_scan_ports': '22',
@@ -1466,18 +1471,18 @@ def _read_conf_file(path):
         try:
             conf_opts = yaml.safe_load(conf_file.read()) or {}
         except yaml.YAMLError as err:
-            log.error(
-                'Error parsing configuration file: {0} - {1}'.format(path, err)
-            )
-            conf_opts = {}
+            message = 'Error parsing configuration file: {0} - {1}'.format(path, err)
+            log.error(message)
+            raise salt.exceptions.SaltConfigurationError(message)
+
         # only interpret documents as a valid conf, not things like strings,
         # which might have been caused by invalid yaml syntax
         if not isinstance(conf_opts, dict):
-            log.error(
-                'Error parsing configuration file: {0} - conf should be a '
-                'document, not {1}.'.format(path, type(conf_opts))
-            )
-            conf_opts = {}
+            message = 'Error parsing configuration file: {0} - conf ' \
+                      'should be a document, not {1}.'.format(path, type(conf_opts))
+            log.error(message)
+            raise salt.exceptions.SaltConfigurationError(message)
+
         # allow using numeric ids: convert int to string
         if 'id' in conf_opts:
             if not isinstance(conf_opts['id'], six.string_types):
@@ -1561,15 +1566,19 @@ def load_config(path, env_var, default_path=None):
                     out.write(ifile.read())
 
     if salt.utils.validate.path.is_readable(path):
-        opts = _read_conf_file(path)
-        opts['conf_file'] = path
-        return opts
+        try:
+            opts = _read_conf_file(path)
+            opts['conf_file'] = path
+            return opts
+        except salt.exceptions.SaltConfigurationError as error:
+            log.error(error)
+            sys.exit(salt.defaults.exitcodes.EX_GENERIC)
 
     log.debug('Missing configuration file: {0}'.format(path))
     return {}
 
 
-def include_config(include, orig_path, verbose):
+def include_config(include, orig_path, verbose, exit_on_config_errors=False):
     '''
     Parses extra configuration file(s) specified in an include list in the
     main config file.
@@ -1605,7 +1614,12 @@ def include_config(include, orig_path, verbose):
 
         for fn_ in sorted(glob.glob(path)):
             log.debug('Including configuration from {0!r}'.format(fn_))
-            opts = _read_conf_file(fn_)
+            try:
+                opts = _read_conf_file(fn_)
+            except salt.exceptions.SaltConfigurationError as error:
+                log.error(error)
+                if exit_on_config_errors:
+                    sys.exit(salt.defaults.exitcodes.EX_GENERIC)
 
             include = opts.get('include', [])
             if include:
@@ -1648,7 +1662,8 @@ def insert_system_path(opts, paths):
 def minion_config(path,
                   env_var='SALT_MINION_CONFIG',
                   defaults=None,
-                  cache_minion_id=False):
+                  cache_minion_id=False,
+                  ignore_config_errors=True):
     '''
     Reads in the minion configuration file and sets up special options
 
@@ -1683,8 +1698,10 @@ def minion_config(path,
                                     defaults['default_include'])
     include = overrides.get('include', [])
 
-    overrides.update(include_config(default_include, path, verbose=False))
-    overrides.update(include_config(include, path, verbose=True))
+    overrides.update(include_config(default_include, path, verbose=False,
+                                    exit_on_config_errors=not ignore_config_errors))
+    overrides.update(include_config(include, path, verbose=True,
+                                    exit_on_config_errors=not ignore_config_errors))
 
     opts = apply_minion_config(overrides, defaults, cache_minion_id=cache_minion_id)
     _validate_opts(opts)
@@ -2892,7 +2909,7 @@ def apply_minion_config(overrides=None,
     return opts
 
 
-def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None):
+def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None, exit_on_config_errors=False):
     '''
     Reads in the master configuration file and sets up default options
 
@@ -2919,8 +2936,8 @@ def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None):
                                     defaults['default_include'])
     include = overrides.get('include', [])
 
-    overrides.update(include_config(default_include, path, verbose=False))
-    overrides.update(include_config(include, path, verbose=True))
+    overrides.update(include_config(default_include, path, verbose=False), exit_on_config_errors=exit_on_config_errors)
+    overrides.update(include_config(include, path, verbose=True), exit_on_config_errors=exit_on_config_errors)
     opts = apply_master_config(overrides, defaults)
     _validate_opts(opts)
     # If 'nodegroups:' is uncommented in the master config file, and there are

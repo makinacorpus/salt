@@ -74,7 +74,8 @@ def recv(files, dest):
             return 'Destination unavailable'
 
         try:
-            salt.utils.fopen(final, 'w+').write(data)
+            with salt.utils.fopen(final, 'w+') as fp_:
+                fp_.write(data)
             ret[final] = True
         except IOError:
             ret[final] = False
@@ -781,9 +782,19 @@ def push(path, keep_symlinks=False, upload_path=None):
         load_path = upload_path.lstrip(os.sep)
     else:
         load_path = path.lstrip(os.sep)
+    # Normalize the path. This does not eliminate
+    # the possibility that relative entries will still be present
+    load_path_normal = os.path.normpath(load_path)
+
+    # If this is Windows and a drive letter is present, remove it
+    load_path_split_drive = os.path.splitdrive(load_path_normal)[1:]
+
+    # Finally, split the remaining path into a list for delivery to the master
+    load_path_list = os.path.split(load_path_split_drive)
+
     load = {'cmd': '_file_recv',
             'id': __opts__['id'],
-            'path': load_path,
+            'path': load_path_list,
             'tok': auth.gen_token('salt')}
     channel = salt.transport.Channel.factory(__opts__)
     with salt.utils.fopen(path, 'rb') as fp_:
@@ -839,6 +850,8 @@ def push_dir(path, glob=None, upload_path=None):
             filelist += [os.path.join(root, tmpfile) for tmpfile in files]
         if glob is not None:
             filelist = [fi for fi in filelist if fnmatch.fnmatch(fi, glob)]
+        if not filelist:
+            return False
         for tmpfile in filelist:
             if upload_path and tmpfile.startswith(path):
                 tmpupload_path = os.path.join(os.path.sep,
