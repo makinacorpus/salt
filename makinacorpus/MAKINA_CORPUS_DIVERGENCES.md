@@ -7,9 +7,9 @@ MakinaCorpus Saltstack fork
 
 DIVERGENCES TO KEEP AT ALL COSTS:
 ----------------------------------
-- [MC: lower virtual noice / 8478da98840633cbf405a44d6d56aea94861381e](https://github.com/makinacorpus/salt/commit/8478da98840633cbf405a44d6d56aea94861381e)
+- [MC: lower virtual noise / 8478da98840633cbf405a44d6d56aea94861381e](https://github.com/makinacorpus/salt/commit/8478da98840633cbf405a44d6d56aea94861381e)
 
-  - [MC: lower virtual noice / 0877a28873bda58af9e391aac70b4dcd0a4f5f77](https://github.com/makinacorpus/salt/commit/0877a28873bda58af9e391aac70b4dcd0a4f5f77)
+  - [MC: lower virtual noise / 0877a28873bda58af9e391aac70b4dcd0a4f5f77](https://github.com/makinacorpus/salt/commit/0877a28873bda58af9e391aac70b4dcd0a4f5f77)
 
 - [protect VT logs from unicode strings / 6039f1a8327892978da220b50f30e002c97d0a51](https://github.com/makinacorpus/salt/commit/6039f1a8327892978da220b50f30e002c97d0a51)
 
