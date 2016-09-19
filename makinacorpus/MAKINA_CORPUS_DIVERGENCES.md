@@ -26,7 +26,7 @@ DIVERGENCES TO KEEP AT ALL COSTS:
     - tried to rediscuss on https://github.com/saltstack/salt/issues/23317
 
 - [Handle ascii errors in jinja error logging](https://github.com/makinacorpus/salt/commit/b0020af512b78799793485cde620197f32994a85)
-- [harmful messages  v2016](https://github.com/makinacorpus/salt/commit/9faf20fafc1c58e329b76415b209e699b28aa11e)
+- [harmful messages  v2016](https://github.com/makinacorpus/salt/commit/2c2b287cecb42a012b00b628b3ff3cda252fcaad)
 
 
 Backports
