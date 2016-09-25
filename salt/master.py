@@ -468,13 +468,17 @@ class Master(SMaster):
             and not isinstance(x['git'], six.string_types)
         ]
         if non_legacy_git_pillars:
-            new_opts = copy.deepcopy(self.opts)
-            new_opts['ext_pillar'] = non_legacy_git_pillars
             try:
-                # Init any values needed by the git ext pillar
-                salt.utils.gitfs.GitPillar(new_opts)
-            except FileserverConfigError as exc:
-                critical_errors.append(exc.strerror)
+                new_opts = copy.deepcopy(self.opts)
+                from salt.pillar.git_pillar \
+                    import PER_REMOTE_OVERRIDES as overrides
+                for repo in non_legacy_git_pillars:
+                    new_opts['ext_pillar'] = [repo]
+                    try:
+                        git_pillar = salt.utils.gitfs.GitPillar(new_opts)
+                        git_pillar.init_remotes(repo['git'], overrides)
+                    except FileserverConfigError as exc:
+                        critical_errors.append(exc.strerror)
             finally:
                 del new_opts
 
@@ -1203,9 +1207,10 @@ class AESFuncs(object):
 
         if len(load['data']) + load.get('loc', 0) > file_recv_max_size:
             log.error(
-                'Exceeding file_recv_max_size limit: {0}'.format(
-                    file_recv_max_size
-                )
+                'file_recv_max_size limit of %d MB exceeded! %s will be '
+                'truncated. To successfully push this file, adjust '
+                'file_recv_max_size to an integer (in MB) large enough to '
+                'accommodate it.', file_recv_max_size, load['path']
             )
             return False
         if 'tok' not in load:
@@ -1399,8 +1404,8 @@ class AESFuncs(object):
         # Format individual return loads
         for key, item in six.iteritems(load['return']):
             ret = {'jid': load['jid'],
-                   'id': key,
-                   'return': item}
+                   'id': key}
+            ret.update(item)
             if 'master_id' in load:
                 ret['master_id'] = load['master_id']
             if 'fun' in load:
