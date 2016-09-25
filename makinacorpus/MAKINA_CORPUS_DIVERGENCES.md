@@ -61,4 +61,5 @@ Notes
 PR
 ----
  - [extpillar](https://github.com/saltstack/salt/pull/31380/commits)
+ - [Fix pkg.latest_version using localized output](https://github.com/makinacorpus/salt/commit/a1a0ab1bcd6cb08a84418735560835f716bee4fe)
 
