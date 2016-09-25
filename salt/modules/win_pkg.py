@@ -16,7 +16,6 @@ A module to manage software on Windows
 
 # Import python libs
 from __future__ import absolute_import
-import errno
 import os
 import locale
 import logging
@@ -40,7 +39,7 @@ except ImportError:
 import shlex
 
 # Import salt libs
-from salt.exceptions import CommandExecutionError, SaltRenderError
+from salt.exceptions import SaltRenderError
 import salt.utils
 import salt.syspaths
 from salt.exceptions import MinionError
@@ -707,9 +706,14 @@ def install(name=None, refresh=False, pkgs=None, saltenv='base', **kwargs):
                                          start_in=cache_path,
                                          trigger_type='Once',
                                          start_date='1975-01-01',
-                                         start_time='01:00')
+                                         start_time='01:00',
+                                         ac_only=False,
+                                         stop_if_on_batteries=False)
             # Run Scheduled Task
-            __salt__['task.run_wait'](name='update-salt-software')
+            if not __salt__['task.run_wait'](name='update-salt-software'):
+                log.error('Failed to install {0}'.format(pkg_name))
+                log.error('Scheduled Task failed to run')
+                ret[pkg_name] = {'install status': 'failed'}
         else:
             # Build the install command
             cmd = []
@@ -966,9 +970,14 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
                                          start_in=cache_path,
                                          trigger_type='Once',
                                          start_date='1975-01-01',
-                                         start_time='01:00')
+                                         start_time='01:00',
+                                         ac_only=False,
+                                         stop_if_on_batteries=False)
             # Run Scheduled Task
-            __salt__['task.run_wait'](name='update-salt-software')
+            if not __salt__['task.run_wait'](name='update-salt-software'):
+                log.error('Failed to remove {0}'.format(target))
+                log.error('Scheduled Task failed to run')
+                ret[target] = {'uninstall status': 'failed'}
         else:
             # Build the install command
             cmd = []
@@ -1060,6 +1069,9 @@ def get_repo_data(saltenv='base'):
     #    return __context__['winrepo.data']
     repocache_dir = _get_local_repo_dir(saltenv=saltenv)
     winrepo = 'winrepo.p'
+    if not os.path.exists(os.path.join(repocache_dir, winrepo)):
+        log.debug('No winrepo.p cache file. Refresh pkg db now.')
+        refresh_db(saltenv=saltenv)
     try:
         with salt.utils.fopen(
                 os.path.join(repocache_dir, winrepo), 'rb') as repofile:
@@ -1070,12 +1082,6 @@ def get_repo_data(saltenv='base'):
                 log.exception(exc)
                 return {}
     except IOError as exc:
-        if exc.errno == errno.ENOENT:
-            # File doesn't exist
-            raise CommandExecutionError(
-                'Windows repo cache doesn\'t exist, pkg.refresh_db likely '
-                'needed'
-            )
         log.error('Not able to read repo file')
         log.exception(exc)
         return {}

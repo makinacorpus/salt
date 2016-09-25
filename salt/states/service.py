@@ -531,26 +531,12 @@ def mod_watch(name,
         The name of the init or rc script used to manage the service
 
     sfun
-        Required.  The original function which triggered the mod_watch call.
-        Must be one of ``running`` or ``dead``.
+        The original function which triggered the mod_watch call
+        (`service.running`, for example).
 
     sig
         The string to search for when looking for the service process with ps
 
-    reload
-        Use reload instead of the default restart (exclusive option with full_restart,
-        defaults to reload if both are used)
-
-    full_restart
-        Use service.full_restart instead of restart (exclusive option with reload)
-
-    force
-        Use service.force_reload instead of reload (needs reload to be set to True)
-
-    init_delay
-        Add a sleep command (in seconds) before the service is restarted/reloaded
-    force
-        Forcefully reload service
     '''
     ret = {'name': name,
            'changes': {},
@@ -588,7 +574,7 @@ def mod_watch(name,
         if not past_participle:
             past_participle = verb + 'ed'
     else:
-        ret['comment'] = 'sfun must be set to either "running" or "dead"'
+        ret['comment'] = 'Unable to trigger watch for service.{0}'.format(sfun)
         ret['result'] = False
         return ret
 
