@@ -1361,6 +1361,7 @@ CLOUD_CONFIG_DEFAULTS = {
     'default_include': 'cloud.conf.d/*.conf',
     # Global defaults
     'ssh_auth': '',
+    'cachedir': os.path.join(salt.syspaths.CACHE_DIR, 'cloud'),
     'keysize': 4096,
     'os': '',
     'script': 'bootstrap-salt',
@@ -1383,8 +1384,8 @@ CLOUD_CONFIG_DEFAULTS = {
 
 DEFAULT_API_OPTS = {
     # ----- Salt master settings overridden by Salt-API --------------------->
-    'pidfile': '/var/run/salt-api.pid',
-    'logfile': '/var/log/salt/api',
+    'api_pidfile': os.path.join(salt.syspaths.PIDFILE_DIR, 'salt-api.pid'),
+    'api_logfile': os.path.join(salt.syspaths.LOGS_DIR, 'api'),
     'rest_timeout': 300,
     # <---- Salt master settings overridden by Salt-API ----------------------
 }
@@ -1906,16 +1907,17 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
     '''
     Read in the salt cloud config and return the dict
     '''
-    # Load the cloud configuration
-    overrides = load_config(
-        path,
-        env_var,
-        os.path.join(salt.syspaths.CONFIG_DIR, 'cloud')
-    )
     if path:
         config_dir = os.path.dirname(path)
     else:
         config_dir = salt.syspaths.CONFIG_DIR
+
+    # Load the cloud configuration
+    overrides = load_config(
+        path,
+        env_var,
+        os.path.join(config_dir, 'cloud')
+    )
 
     if defaults is None:
         defaults = CLOUD_CONFIG_DEFAULTS
@@ -2030,6 +2032,9 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
     elif master_config_path is not None and master_config is None:
         master_config = salt.config.master_config(master_config_path)
 
+    # cloud config has a seperate cachedir
+    del master_config['cachedir']
+
     # 2nd - salt-cloud configuration which was loaded before so we could
     # extract the master configuration file if needed.
 
@@ -2111,6 +2116,10 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
 
     # recurse opts for sdb configs
     apply_sdb(opts)
+
+    # prepend root_dir
+    prepend_root_dirs = ['cachedir']
+    prepend_root_dir(opts, prepend_root_dirs)
 
     # Return the final options
     return opts
@@ -3271,12 +3280,15 @@ def api_config(path):
     Read in the salt master config file and add additional configs that
     need to be stubbed out for salt-api
     '''
-    # Let's grab a copy of salt's master default opts
-    defaults = DEFAULT_MASTER_OPTS
+    # Let's grab a copy of salt's master opts
+    opts = client_config(path, defaults=DEFAULT_MASTER_OPTS)
     # Let's override them with salt-api's required defaults
-    defaults.update(DEFAULT_API_OPTS)
-
-    return client_config(path, defaults=defaults)
+    api_opts = {
+        'log_file': opts.get('api_logfile', DEFAULT_API_OPTS['api_logfile']),
+        'pidfile': opts.get('api_pidfile', DEFAULT_API_OPTS['api_pidfile'])
+    }
+    opts.update(api_opts)
+    return opts
 
 
 def spm_config(path):

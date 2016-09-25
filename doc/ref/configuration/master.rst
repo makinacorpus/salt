@@ -237,7 +237,7 @@ The directory to store the pki authentication keys.
 
 Directory for custom modules. This directory can contain subdirectories for
 each of Salt's module types such as ``runners``, ``output``, ``wheel``,
-``modules``, ``states``, ``returners``, etc. This path is appended to
+``modules``, ``states``, ``returners``, ``engines``, etc. This path is appended to
 :conf_master:`root_dir`.
 
 .. code-block:: yaml
@@ -2198,9 +2198,9 @@ exposed.
 .. code-block:: yaml
 
     minionfs_whitelist:
-      - base
-      - v1.*
-      - 'mybranch\d+'
+      - server01
+      - dev*
+      - 'mail\d+.mydomain.tld'
 
 .. conf_master:: minionfs_blacklist
 
@@ -2224,9 +2224,9 @@ exposed.
 .. code-block:: yaml
 
     minionfs_blacklist:
-      - base
-      - v1.*
-      - 'mybranch\d+'
+      - server01
+      - dev*
+      - 'mail\d+.mydomain.tld'
 
 
 .. _pillar-configuration:
@@ -2636,7 +2636,10 @@ Pillar Merging Options
 Default: ``smart``
 
 The pillar_source_merging_strategy option allows you to configure merging
-strategy between different sources. It accepts 4 values:
+strategy between different sources. It accepts 5 values:
+
+* ``none``:
+  It will not do any merging at all and only parse the pillar data from the passed environment and 'base' if no environment was specified.
 
 * ``recurse``:
 
