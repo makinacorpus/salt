@@ -406,7 +406,7 @@ def render_jinja_tmpl(tmplstr, context, tmplpath=None):
         log.debug("Exception: {0}".format(exc))
         log.debug("Out: {0}".format(out))
         log.debug("Line: {0}".format(line))
-        log.debug("TmplStr: {0}".format(tmplstr))
+        log.debug("TmplStr: {0}".format(tmplstr.encode('ascii', 'ignore')))
         log.debug("TraceStr: {0}".format(tracestr))
 
         raise SaltRenderError('Jinja error: {0}{1}'.format(exc, out),

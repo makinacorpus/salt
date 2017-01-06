@@ -1491,7 +1491,18 @@ class LazyLoader(salt.utils.lazy.LazyDict):
         # if the key doesn't have a '.' then it isn't valid for this mod dict
         if not isinstance(key, six.string_types) or '.' not in key:
             raise KeyError
-        mod_name, _ = key.split('.', 1)
+        # We must limit ourselves here to only exceptions which are technically
+        # needed and not to prevent certain modules from loading.
+        # Indeed, for now, the only case we need to filter out is the
+        # is the mapping.copy method which is normal to be absent from the
+        # loader but from which other code will test and rely on the
+        # raised AttributeError to perform their own duty
+        if key in ['copy']:
+            raise AttributeError(key)
+        if '.' not in key:
+            mod_name = key
+        else:
+            mod_name, _ = key.split('.', 1)
         if mod_name in self.missing_modules:
             return True
         # if the modulename isn't in the whitelist, don't bother
@@ -1592,7 +1603,8 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                     error_reason = ('Exception raised when processing __virtual__ function'
                               ' for {0}. Module will not be loaded {1}'.format(
                                   module_name, exc))
-                    log.error(error_reason, exc_info_on_loglevel=logging.DEBUG)
+                    # XXX: MC: unactivate virtual logging
+                    log.trace(error_reason, exc_info_on_loglevel=logging.DEBUG)
                     virtual = None
                 # Get the module's virtual name
                 virtualname = getattr(mod, '__virtualname__', virtual)
@@ -1604,7 +1616,8 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                     # Some modules might accidentally return None and are
                     # improperly loaded
                     if virtual is None:
-                        log.warning(
+                        # XXX: MC: unactivate virtual logging
+                        log.trace(
                             '{0}.__virtual__() is wrongly returning `None`. '
                             'It should either return `True`, `False` or a new '
                             'name. If you\'re the developer of the module '

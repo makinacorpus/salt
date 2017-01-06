@@ -1,0 +1,712 @@
+diff -Nur salt/modules/grains.py ../develop/salt/modules/grains.py
+--- salt/modules/grains.py	2016-01-18 12:46:04.817804743 +0000
++++ ../develop/salt/modules/grains.py	2016-01-18 12:45:54.565793504 +0000
+@@ -519,7 +519,7 @@
+         if ret is None:
+             ret = merge
+         else:
+-            salt.utils.dictupdate.update(ret, merge)
++            salt.utils.dictupdate.update(ret, copy.deepcopy(merge))
+
+     return ret
+
+diff -Nur salt/modules/lxc.py ../develop/salt/modules/lxc.py
+--- salt/modules/lxc.py	2016-01-18 12:46:04.825804752 +0000
++++ ../develop/salt/modules/lxc.py	2016-01-18 12:45:54.573793513 +0000
+@@ -22,7 +22,7 @@
+ import shutil
+ import re
+ import random
+-import distutils.version
++import distutils.version  # pylint: disable=no-name-in-module,import-error
+
+ # Import salt libs
+ import salt
+@@ -117,7 +117,7 @@
+     '''
+     k = 'lxc.version'
+     if not __context__.get(k, None):
+-        cversion = __salt__['cmd.run_all']('lxc-ls --version')
++        cversion = __salt__['cmd.run_all']('lxc-info --version')
+         if not cversion['retcode']:
+             ver = distutils.version.LooseVersion(cversion['stdout'])
+             if ver < distutils.version.LooseVersion('1.0'):
+@@ -879,6 +879,10 @@
+ def _get_lxc_default_data(**kwargs):
+     kwargs = copy.deepcopy(kwargs)
+     ret = {}
++    for k in ['utsname', 'rootfs']:
++        val = kwargs.get(k, None)
++        if val is not None:
++            ret['lxc.{0}'.format(k)] = val
+     autostart = kwargs.get('autostart')
+     # autostart can have made in kwargs, but with the None
+     # value which is invalid, we need an explicit boolean
+@@ -1391,7 +1395,8 @@
+     # If using a volume group then set up to make snapshot cow clones
+     if vgname and not clone_from:
+         try:
+-            clone_from = _get_base(vgname=vgname, profile=profile, **kwargs)
++            kwargs['vgname'] = vgname
++            clone_from = _get_base(profile=profile, **kwargs)
+         except (SaltInvocationError, CommandExecutionError) as exc:
+             ret['comment'] = exc.strerror
+             if changes:
+@@ -2094,7 +2099,7 @@
+         cmd += ' -B {0}'.format(backing)
+         if backing not in ('dir', 'overlayfs'):
+             if size:
+-                cmd += ' --fssize {0}'.format(size)
++                cmd += ' -L {0}'.format(size)
+     ret = __salt__['cmd.run_all'](cmd, python_shell=False)
+     # please do not merge extra conflicting stuff
+     # inside those two line (ret =, return)
+@@ -4549,6 +4554,8 @@
+                 bridge=None,
+                 gateway=None,
+                 autostart=None,
++                utsname=None,
++                rootfs=None,
+                 path=None,
+                 **kwargs):
+     '''
+@@ -4558,6 +4565,16 @@
+
+     name
+         Name of the container.
++    utsname
++        utsname of the container.
++
++        .. versionadded:: Boron
++
++    rootfs
++        rootfs of the container.
++
++        .. versionadded:: Boron
++
+     cpu
+         Select a random number of cpu cores and assign it to the cpuset, if the
+         cpuset option is set then this option will be ignored
+@@ -4624,9 +4641,13 @@
+         autostart = select('autostart', autostart)
+     else:
+         autostart = 'keep'
++    if not utsname:
++        utsname = select('utsname', utsname)
+     if os.path.exists(path):
+         old_chunks = read_conf(path, out_format='commented')
+         make_kw = salt.utils.odict.OrderedDict([
++            ('utsname', utsname),
++            ('rootfs', rootfs),
+             ('autostart', autostart),
+             ('cpu', cpu),
+             ('gateway', gateway),
+--- salt/states/service.py	2016-01-18 12:46:04.897804832 +0000
++++ ../develop/salt/states/service.py	2016-01-18 12:45:54.693793646 +0000
+@@ -48,6 +48,9 @@
+ from __future__ import absolute_import
+ import time
+
++# Import Salt libs
++from salt.exceptions import CommandExecutionError
++
+
+ def __virtual__():
+     '''
+@@ -76,7 +79,12 @@
+     ret = {}
+
+     # is service available?
+-    if not _available(name, ret):
++    try:
++        if not _available(name, ret):
++            return ret
++    except CommandExecutionError as exc:
++        ret['result'] = False
++        ret['comment'] = exc.strerror
+         return ret
+
+     # Check to see if this minion supports enable
+@@ -160,8 +168,13 @@
+     ret = {}
+
+     # is service available?
+-    if not _available(name, ret):
+-        ret['result'] = True
++    try:
++        if not _available(name, ret):
++            ret['result'] = True
++            return ret
++    except CommandExecutionError as exc:
++        ret['result'] = False
++        ret['comment'] = exc.strerror
+         return ret
+
+     # is enable/disable available?
+@@ -287,13 +300,21 @@
+         return _enabled_used_error(ret)
+
+     # Check if the service is available
+-    if not _available(name, ret):
++    try:
++        if not _available(name, ret):
++            return ret
++    except CommandExecutionError as exc:
++        ret['result'] = False
++        ret['comment'] = exc.strerror
+         return ret
+
+     # lot of custom init script wont or mis implement the status
+     # command, so it is just an indicator but can not be fully trusted
+     before_toggle_status = __salt__['service.status'](name, sig)
+-    before_toggle_enable_status = __salt__['service.enabled'](name)
++    if 'service.enabled' in __salt__:
++        before_toggle_enable_status = __salt__['service.enabled'](name)
++    else:
++        before_toggle_enable_status = True
+
+     # See if the service is already running
+     if before_toggle_status:
+@@ -328,7 +349,10 @@
+
+     # only force a change state if we have explicitly detected them
+     after_toggle_status = __salt__['service.status'](name)
+-    after_toggle_enable_status = __salt__['service.enabled'](name)
++    if 'service.enabled' in __salt__:
++        after_toggle_enable_status = __salt__['service.enabled'](name)
++    else:
++        after_toggle_enable_status = True
+     if (
+         (before_toggle_enable_status != after_toggle_enable_status) or
+         (before_toggle_status != after_toggle_status)
+@@ -369,14 +393,22 @@
+         return _enabled_used_error(ret)
+
+     # Check if the service is available
+-    if not _available(name, ret):
+-        ret['result'] = True
++    try:
++        if not _available(name, ret):
++            ret['result'] = True
++            return ret
++    except CommandExecutionError as exc:
++        ret['result'] = False
++        ret['comment'] = exc.strerror
+         return ret
+
+     # lot of custom init script wont or mis implement the status
+     # command, so it is just an indicator but can not be fully trusted
+     before_toggle_status = __salt__['service.status'](name, sig)
+-    before_toggle_enable_status = __salt__['service.enabled'](name)
++    if 'service.enabled' in __salt__:
++        before_toggle_enable_status = __salt__['service.enabled'](name)
++    else:
++        before_toggle_enable_status = True
+     if not before_toggle_status:
+         ret['comment'] = 'The service {0} is already dead'.format(name)
+         if enable is True and not before_toggle_enable_status:
+@@ -407,7 +439,10 @@
+             ret.update(_disable(name, False, **kwargs))
+     # only force a change state if we have explicitly detected them
+     after_toggle_status = __salt__['service.status'](name)
+-    after_toggle_enable_status = __salt__['service.enabled'](name)
++    if 'service.enabled' in __salt__:
++        after_toggle_enable_status = __salt__['service.enabled'](name)
++    else:
++        after_toggle_enable_status = True
+     if (
+         (before_toggle_enable_status != after_toggle_enable_status) or
+         (before_toggle_status != after_toggle_status)
+@@ -474,6 +509,19 @@
+
+     sig
+         The string to search for when looking for the service process with ps
++
++    reload
++        Use reload instead of the default restart (exclusive option with full_restart,
++        defaults to reload if both are used)
++
++    full_restart
++        Use service.full_restart instead of restart (exclusive option with reload)
++
++    force
++        Use service.force_reload instead of reload (needs reload to be set to True)
++
++    init_delay
++        Add a sleep command (in seconds) before the service is restarted/reloaded
+     '''
+     ret = {'name': name,
+            'changes': {},
+--- salt/utils/cloud.py	2016-01-18 12:46:04.905804840 +0000
++++ ../develop/salt/utils/cloud.py	2016-01-18 12:45:54.701793655 +0000
+@@ -196,7 +196,7 @@
+     key = os.path.join(pki_dir, 'minions', id_)
+     if os.path.isfile(key):
+         os.remove(key)
+-        log.debug('Deleted {0!r}'.format(key))
++        log.debug('Deleted \'{0}\''.format(key))
+
+
+ def rename_key(pki_dir, id_, new_id):
+@@ -309,11 +309,14 @@
+         }
+
+     key_filename = salt.config.get_cloud_config_value(
+-        'key_filename', vm_, opts, search_global=False, default=None
++        'key_filename', vm_, opts, search_global=False,
++        default=salt.config.get_cloud_config_value(
++            'ssh_keyfile', vm_, opts, search_global=False, default=None
++        )
+     )
+     if key_filename is not None and not os.path.isfile(key_filename):
+         raise SaltCloudConfigError(
+-            'The defined ssh_keyfile {0!r} does not exist'.format(
++            'The defined ssh_keyfile \'{0}\' does not exist'.format(
+                 key_filename
+             )
+         )
+@@ -355,6 +358,33 @@
+     if 'file_transport' not in opts:
+         opts['file_transport'] = vm_.get('file_transport', 'sftp')
+
++    # If we haven't generated any keys yet, do so now.
++    if 'pub_key' not in vm_ and 'priv_key' not in vm_:
++        log.debug('Generating keys for \'{0[name]}\''.format(vm_))
++
++        vm_['priv_key'], vm_['pub_key'] = gen_keys(
++            salt.config.get_cloud_config_value(
++                'keysize',
++                vm_,
++                opts
++            )
++        )
++
++        key_id = vm_.get('name')
++        if 'append_domain' in vm_:
++            key_id = '.'.join([key_id, vm_['append_domain']])
++
++        accept_key(
++            opts['pki_dir'], vm_['pub_key'], key_id
++        )
++
++    if 'os' not in vm_:
++        vm_['os'] = salt.config.get_cloud_config_value(
++            'script',
++            vm_,
++            opts
++        )
++
+     # NOTE: deploy_kwargs is also used to pass inline_script variable content
+     #       to run_inline_script function
+     deploy_kwargs = {
+@@ -645,8 +675,7 @@
+         return True
+     # Let the user know that his gateway is good!
+     log.debug(
+-        'Gateway {0} on port {1} '
+-        'is reachable.'.format(
++        'Gateway {0} on port {1} is reachable.'.format(
+             test_ssh_host, test_ssh_port
+         )
+     )
+@@ -670,6 +699,8 @@
+             '-oChallengeResponseAuthentication=no',
+             # Make sure public key authentication is enabled
+             '-oPubkeyAuthentication=yes',
++            # do only use the provided identity file
++            '-oIdentitiesOnly=yes',
+             # No Keyboard interaction!
+             '-oKbdInteractiveAuthentication=no',
+             # Also, specify the location of the key file
+@@ -686,7 +717,7 @@
+         ' '.join(ssh_args), gateway['ssh_gateway_user'], ssh_gateway,
+         ssh_gateway_port, pipes.quote(command)
+     )
+-    log.debug('SSH command: {0!r}'.format(cmd))
++    log.debug('SSH command: \'{0}\''.format(cmd))
+
+     kwargs = {'display_ssh_output': False,
+               'password': gateway.get('ssh_gateway_password', None)}
+@@ -848,7 +879,7 @@
+ def wait_for_passwd(host, port=22, ssh_timeout=15, username='root',
+                     password=None, key_filename=None, maxtries=15,
+                     trysleep=1, display_ssh_output=True, gateway=None,
+-                    known_hosts_file='/dev/null'):
++                    known_hosts_file='/dev/null', hard_timeout=None):
+     '''
+     Wait until ssh connection can be accessed via password or ssh key
+     '''
+@@ -862,7 +893,9 @@
+                       'password_retries': maxtries,
+                       'timeout': ssh_timeout,
+                       'display_ssh_output': display_ssh_output,
+-                      'known_hosts_file': known_hosts_file}
++                      'known_hosts_file': known_hosts_file,
++                      'ssh_timeout': ssh_timeout,
++                      'hard_timeout': hard_timeout}
+             if gateway:
+                 kwargs['ssh_gateway'] = gateway['ssh_gateway']
+                 kwargs['ssh_gateway_key'] = gateway['ssh_gateway_key']
+@@ -871,7 +904,7 @@
+             if key_filename:
+                 if not os.path.isfile(key_filename):
+                     raise SaltCloudConfigError(
+-                        'The defined key_filename {0!r} does not exist'.format(
++                        'The defined key_filename \'{0}\' does not exist'.format(
+                             key_filename
+                         )
+                     )
+@@ -1167,7 +1200,7 @@
+     deploy_command = os.path.join(tmp_dir, 'deploy.sh')
+     if key_filename is not None and not os.path.isfile(key_filename):
+         raise SaltCloudConfigError(
+-            'The defined key_filename {0!r} does not exist'.format(
++            'The defined key_filename \'{0}\' does not exist'.format(
+                 key_filename
+             )
+         )
+@@ -1180,6 +1213,7 @@
+     log.debug('Deploying {0} at {1}'.format(host, starttime))
+
+     known_hosts_file = kwargs.get('known_hosts_file', '/dev/null')
++    hard_timeout = opts.get('hard_timeout', None)
+
+     if wait_for_port(host=host, port=port, gateway=gateway):
+         log.debug('SSH port {0} on {1} is available'.format(port, host))
+@@ -1188,7 +1222,7 @@
+                            ssh_timeout=ssh_timeout,
+                            display_ssh_output=display_ssh_output,
+                            gateway=gateway, known_hosts_file=known_hosts_file,
+-                           maxtries=maxtries):
++                           maxtries=maxtries, hard_timeout=hard_timeout):
+
+             log.debug(
+                 'Logging into {0}:{1} as {2}'.format(
+@@ -1226,16 +1260,15 @@
+                     )
+             if sudo:
+                 comps = tmp_dir.lstrip('/').rstrip('/').split('/')
+-                if len(comps) > 0:
+-                    if len(comps) > 1 or comps[0] != 'tmp':
+-                        ret = root_cmd(
+-                            'chown {0} \'{1}\''.format(username, tmp_dir),
+-                            tty, sudo, **ssh_kwargs
+-                        )
+-                        if ret:
+-                            raise SaltCloudSystemExit(
+-                                'Cant set {0} ownership on {1}'.format(
+-                                    username, tmp_dir))
++                if len(comps) > 1 or comps[0] != 'tmp':
++                    ret = root_cmd(
++                        'chown {0} \'{1}\''.format(username, tmp_dir),
++                        tty, sudo, **ssh_kwargs
++                    )
++                    if ret:
++                        raise SaltCloudSystemExit(
++                            'Cant set {0} ownership on {1}'.format(
++                                username, tmp_dir))
+
+             if not isinstance(file_map, dict):
+                 file_map = {}
+@@ -1475,11 +1508,11 @@
+                     )
+                 if root_cmd(deploy_command, tty, sudo, **ssh_kwargs) != 0:
+                     raise SaltCloudSystemExit(
+-                        'Executing the command {0!r} failed'.format(
++                        'Executing the command \'{0}\' failed'.format(
+                             deploy_command
+                         )
+                     )
+-                log.debug('Executed command {0!r}'.format(deploy_command))
++                log.debug('Executed command \'{0}\''.format(deploy_command))
+
+                 # Remove the deploy script
+                 if not keep_tmp:
+@@ -1662,15 +1695,14 @@
+             # TODO: write some tests ???
+             # TODO: check edge cases (e.g. ssh gateways, salt deploy disabled, etc.)
+             if root_cmd('test -e \\"{0}\\"'.format(tmp_dir), tty, sudo,
+-                        allow_failure=True, **ssh_kwargs):
+-                if inline_script:
+-                    log.debug('Found inline script to execute.')
+-                    for cmd_line in inline_script:
+-                        log.info("Executing inline command: " + str(cmd_line))
+-                        ret = root_cmd('sh -c "( {0} )"'.format(cmd_line),
+-                                       tty, sudo, allow_failure=True, **ssh_kwargs)
+-                        if ret:
+-                            log.info("[" + str(cmd_line) + "] Output: " + str(ret))
++                        allow_failure=True, **ssh_kwargs) and inline_script:
++                log.debug('Found inline script to execute.')
++                for cmd_line in inline_script:
++                    log.info("Executing inline command: " + str(cmd_line))
++                    ret = root_cmd('sh -c "( {0} )"'.format(cmd_line),
++                                   tty, sudo, allow_failure=True, **ssh_kwargs)
++                    if ret:
++                        log.info("[" + str(cmd_line) + "] Output: " + str(ret))
+
+     # TODO: ensure we send the correct return value
+     return True
+@@ -1702,7 +1734,7 @@
+
+ def _exec_ssh_cmd(cmd, error_msg=None, allow_failure=False, **kwargs):
+     if error_msg is None:
+-        error_msg = 'A wrong password has been issued while establishing ssh session'
++        error_msg = 'A wrong password has been issued while establishing ssh session.'
+     password_retries = kwargs.get('password_retries', 3)
+     try:
+         stdout, stderr = None, None
+@@ -1739,13 +1771,12 @@
+                     raise SaltCloudPasswordError(error_msg)
+             # 0.0125 is really too fast on some systems
+             time.sleep(0.5)
+-        if proc.exitstatus != 0:
+-            if allow_failure is False:
+-                raise SaltCloudSystemExit(
+-                    'Command {0!r} failed. Exit code: {1}'.format(
+-                        cmd, proc.exitstatus
+-                    )
++        if proc.exitstatus != 0 and allow_failure is False:
++            raise SaltCloudSystemExit(
++                'Command \'{0}\' failed. Exit code: {1}'.format(
++                    cmd, proc.exitstatus
+                 )
++            )
+         return proc.exitstatus
+     except vt.TerminalException as err:
+         trace = traceback.format_exc()
+@@ -1789,6 +1820,8 @@
+             '-oChallengeResponseAuthentication=no',
+             # Make sure public key authentication is enabled
+             '-oPubkeyAuthentication=yes',
++            # do only use the provided identity file
++            '-oIdentitiesOnly=yes',
+             # No Keyboard interaction!
+             '-oKbdInteractiveAuthentication=no',
+             # Also, specify the location of the key file
+@@ -1835,9 +1868,9 @@
+         )
+     )
+
+-    log.debug('SCP command: {0!r}'.format(cmd))
++    log.debug('SCP command: \'{0}\''.format(cmd))
+     retcode = _exec_ssh_cmd(cmd,
+-                            error_msg='Failed to upload file {0!r}: {1}\n{2}',
++                            error_msg='Failed to upload file \'{0}\': {1}\n{2}',
+                             password_retries=3,
+                             **kwargs)
+     return retcode
+@@ -1890,6 +1923,8 @@
+             '-oChallengeResponseAuthentication=no',
+             # Make sure public key authentication is enabled
+             '-oPubkeyAuthentication=yes',
++            # do only use the provided identity file
++            '-oIdentitiesOnly=yes',
+             # No Keyboard interaction!
+             '-oKbdInteractiveAuthentication=no',
+             # Also, specify the location of the key file
+@@ -1932,9 +1967,9 @@
+     cmd = 'echo "put {0} {1} {2}" | sftp {3} {4[username]}@{4[hostname]}'.format(
+         ' '.join(put_args), tmppath, dest_path, ' '.join(ssh_args), kwargs
+     )
+-    log.debug('SFTP command: {0!r}'.format(cmd))
++    log.debug('SFTP command: \'{0}\''.format(cmd))
+     retcode = _exec_ssh_cmd(cmd,
+-                            error_msg='Failed to upload file {0!r}: {1}\n{2}',
++                            error_msg='Failed to upload file \'{0}\': {1}\n{2}',
+                             password_retries=3,
+                             **kwargs)
+     return retcode
+@@ -2043,11 +2078,15 @@
+             '-oChallengeResponseAuthentication=no',
+             # Make sure public key authentication is enabled
+             '-oPubkeyAuthentication=yes',
++            # do only use the provided identity file
++            '-oIdentitiesOnly=yes',
+             # No Keyboard interaction!
+             '-oKbdInteractiveAuthentication=no',
+             # Also, specify the location of the key file
+             '-i {0}'.format(kwargs['key_filename'])
+         ])
++    if 'ssh_timeout' in kwargs:
++        ssh_args.extend(['-oConnectTimeout={0}'.format(kwargs['ssh_timeout'])])
+
+     if 'ssh_gateway' in kwargs:
+         ssh_gateway = kwargs['ssh_gateway']
+@@ -2094,7 +2133,13 @@
+     logging_command = cmd + logging_command
+     cmd = cmd + pipes.quote(command)
+
+-    log.debug('SSH command: {0!r}'.format(logging_command))
++    hard_timeout = kwargs.get('hard_timeout')
++    if hard_timeout is not None:
++        logging_command = 'timeout {0} {1}'.format(hard_timeout, logging_command)
++        cmd = 'timeout {0} {1}'.format(hard_timeout, cmd)
++
++    log.debug('SSH command: \'{0}\''.format(logging_command))
++
+     retcode = _exec_ssh_cmd(cmd, allow_failure=allow_failure, **kwargs)
+     return retcode
+
+@@ -2237,7 +2282,7 @@
+     duration = timeout
+     while True:
+         log.debug(
+-            'Waiting for VM IP. Giving up in 00:{0:02d}:{1:02d}'.format(
++            'Waiting for VM IP. Giving up in 00:{0:02d}:{1:02d}.'.format(
+                 int(timeout // 60),
+                 int(timeout % 60)
+             )
+@@ -2245,21 +2290,23 @@
+         data = update_callback(*update_args, **update_kwargs)
+         if data is False:
+             log.debug(
+-                'update_callback has returned False which is considered a '
+-                'failure. Remaining Failures: {0}'.format(max_failures)
++                '\'update_callback\' has returned \'False\', which is '
++                'considered a failure. Remaining Failures: {0}.'.format(
++                    max_failures
++                )
+             )
+             max_failures -= 1
+             if max_failures <= 0:
+                 raise SaltCloudExecutionFailure(
+-                    'Too much failures occurred while waiting for '
+-                    'the IP address'
++                    'Too many failures occurred while waiting for '
++                    'the IP address.'
+                 )
+         elif data is not None:
+             return data
+
+         if timeout < 0:
+             raise SaltCloudExecutionTimeout(
+-                'Unable to get IP for 00:{0:02d}:{1:02d}'.format(
++                'Unable to get IP for 00:{0:02d}:{1:02d}.'.format(
+                     int(duration // 60),
+                     int(duration % 60)
+                 )
+@@ -2272,7 +2319,7 @@
+             if interval > timeout:
+                 interval = timeout + 1
+             log.info('Interval multiplier in effect; interval is '
+-                     'now {0}s'.format(interval))
++                     'now {0}s.'.format(interval))
+
+
+ def simple_types_filter(data):
+@@ -2438,9 +2485,8 @@
+     if base is None:
+         base = os.path.join(syspaths.CACHE_DIR, 'cloud')
+
+-    if not fingerprint:
+-        if pubkey is not None:
+-            fingerprint = salt.utils.pem_finger(key=pubkey)
++    if not fingerprint and pubkey is not None:
++        fingerprint = salt.utils.pem_finger(key=pubkey)
+
+     init_cachedir(base)
+
+@@ -2690,13 +2736,13 @@
+                 os.makedirs(entry)
+             except (OSError, IOError) as err:
+                 log.info(
+-                    'Failed to create directory {0!r}'.format(entry)
++                    'Failed to create directory \'{0}\''.format(entry)
+                 )
+                 continue
+
+         if not is_writeable(entry):
+             log.debug(
+-                'The {0!r} is not writeable. Continuing...'.format(
++                'The \'{0}\' is not writeable. Continuing...'.format(
+                     entry
+                 )
+             )
+@@ -2751,10 +2797,10 @@
+     if 'update_cachedir' not in opts or not opts['update_cachedir']:
+         return
+
+-    if not os.path.exists(os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')):
++    base = os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')
++    if not os.path.exists(base):
+         init_cachedir()
+
+-    base = os.path.join(syspaths.CACHE_DIR, 'cloud', 'active')
+     provider, driver = provider.split(':')
+     prov_dir = os.path.join(base, driver, provider)
+     if not os.path.exists(prov_dir):
+@@ -2782,8 +2828,6 @@
+     for node in os.listdir(prov_dir):
+         cached_nodes.append(os.path.splitext(node)[0])
+
+-    log.debug(sorted(cached_nodes))
+-    log.debug(sorted(node_list))
+     for node in cached_nodes:
+         if node not in node_list:
+             delete_minion_cachedir(node, provider, opts)
+@@ -2816,8 +2860,7 @@
+
+     if node is None:
+         return
+-    path = os.path.join(prov_dir, node)
+-    path = '{0}.p'.format(path)
++    path = '{0}.p'.format(os.path.join(prov_dir, node))
+
+     if not os.path.exists(path):
+         event_data = _strip_cache_events(new_data, opts)
+@@ -2892,8 +2935,10 @@
+         raise TypeError('Can\'t handle {0}'.format(exc))
+
+     unicode_trans = {
+-        u'\xa0': u' ',  # Convert non-breaking space to space
+-        u'\u2013': u'-',  # Convert en dash to dash
++        # Convert non-breaking space to space
++        u'\xa0': u' ',
++        # Convert en dash to dash
++        u'\u2013': u'-',
+     }
+
+     if exc.object[exc.start:exc.end] in unicode_trans:
+@@ -3016,3 +3061,42 @@
+         )
+
+     return salt_host
++
++
++def check_key_path_and_mode(provider, key_path):
++    '''
++    Checks that the key_path exists and the key_mode is either 0400 or 0600.
++
++    Returns True or False.
++
++    .. versionadded:: Boron
++
++    provider
++        The provider name that the key_path to check belongs to.
++
++    key_path
++        The key_path to ensure that it exists and to check adequate permissions
++        against.
++    '''
++    if not os.path.exists(key_path):
++        log.error(
++            'The key file \'{0}\' used in the \'{1}\' provider configuration '
++            'does not exist.\n'.format(
++                key_path,
++                provider
++            )
++        )
++        return False
++
++    key_mode = str(oct(stat.S_IMODE(os.stat(key_path).st_mode)))
++    if key_mode not in ('0400', '0600'):
++        log.error(
++            'The key file \'{0}\' used in the \'{1}\' provider configuration '
++            'needs to be set to mode 0400 or 0600.\n'.format(
++                key_path,
++                provider
++            )
++        )
++        return False
++
++    return True
