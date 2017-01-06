@@ -887,7 +887,7 @@ def install(name=None,
             ignore_repo_failure=False,
             **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1047,9 +1047,14 @@ def install(name=None,
     return salt.utils.compare_dicts(old, new)
 
 
-def upgrade(refresh=True):
+def upgrade(refresh=True,
+            dryrun=False,
+            dist_upgrade=False,
+            fromrepo=None,
+            novendorchange=False,
+            **kwargs):  # pylint: disable=unused-argument
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1070,6 +1075,19 @@ def upgrade(refresh=True):
         If set to False it depends on zypper if a refresh is
         executed.
 
+    dryrun
+        If set to True, it creates a debug solver log file and then perform
+        a dry-run upgrade (no changes are made). Default: False
+
+    dist_upgrade
+        Perform a system dist-upgrade. Default: False
+
+    fromrepo
+        Specify a list of package repositories to upgrade from. Default: None
+
+    novendorchange
+        If set to True, no allow vendor changes. Default: False
+
     Return a dict containing the new package names and versions::
 
         {'<package>': {'old': '<old-version>',
@@ -1080,23 +1098,52 @@ def upgrade(refresh=True):
     .. code-block:: bash
 
         salt '*' pkg.upgrade
+        salt '*' pkg.upgrade dist-upgrade=True fromrepo='["MyRepoName"]' novendorchange=True
+        salt '*' pkg.upgrade dist-upgrade=True dryrun=True
     '''
     ret = {'changes': {},
            'result': True,
            'comment': '',
     }
 
+    cmd_update = (['dist-upgrade'] if dist_upgrade else ['update']) + ['--auto-agree-with-licenses']
+
     if refresh:
         refresh_db()
+
+    if dryrun:
+        cmd_update.append('--dry-run')
+
+    if dist_upgrade:
+        if dryrun:
+            # Creates a solver test case for debugging.
+            log.info('Executing debugsolver and performing a dry-run dist-upgrade')
+            __zypper__.noraise.call(*cmd_update + ['--debug-solver'])
+
+        if fromrepo:
+            for repo in fromrepo:
+                cmd_update.extend(['--from', repo])
+            log.info('Targeting repos: {0!r}'.format(fromrepo))
+
+        if novendorchange:
+            # TODO: Grains validation should be moved to Zypper class
+            if __grains__['osrelease_info'][0] > 11:
+                cmd_update.append('--no-allow-vendor-change')
+                log.info('Disabling vendor changes')
+            else:
+                log.warn('Disabling vendor changes is not supported on this Zypper version')
+
     old = list_pkgs()
-    __zypper__(systemd_scope=_systemd_scope()).noraise.call('update', '--auto-agree-with-licenses')
+    __zypper__(systemd_scope=_systemd_scope()).noraise.call(*cmd_update)
     if __zypper__.exit_code not in __zypper__.SUCCESS_EXIT_CODES:
         ret['result'] = False
-        ret['comment'] = (__zypper__.stdout() + os.linesep + __zypper__.stderr()).strip()
     else:
         __context__.pop('pkg.list_pkgs', None)
         new = list_pkgs()
         ret['changes'] = salt.utils.compare_dicts(old, new)
+
+    if dryrun or not ret['result']:
+        ret['comment'] = (__zypper__.stdout() + os.linesep + __zypper__.stderr()).strip()
 
     return ret
 
@@ -1127,7 +1174,7 @@ def _uninstall(name=None, pkgs=None):
 
 def remove(name=None, pkgs=None, **kwargs):  # pylint: disable=unused-argument
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1171,7 +1218,7 @@ def remove(name=None, pkgs=None, **kwargs):  # pylint: disable=unused-argument
 
 def purge(name=None, pkgs=None, **kwargs):  # pylint: disable=unused-argument
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd

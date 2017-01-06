@@ -179,7 +179,7 @@ class SSH(object):
             raise salt.exceptions.SaltSystemExit('No ssh binary found in path -- ssh must be installed for salt-ssh to run. Exiting.')
         self.opts['_ssh_version'] = ssh_version()
         self.tgt_type = self.opts['selected_target_option'] \
-                if self.opts['selected_target_option'] else 'glob'
+            if self.opts['selected_target_option'] else 'glob'
         self.roster = salt.roster.Roster(opts, opts.get('roster', 'flat'))
         self.targets = self.roster.targets(
                 self.opts['tgt'],
@@ -252,7 +252,7 @@ class SSH(object):
         self.serial = salt.payload.Serial(opts)
         self.returners = salt.loader.returners(self.opts, {})
         self.fsclient = salt.fileclient.FSClient(self.opts)
-        self.thin = salt.utils.thin.gen_thin(self.opts['cachedir'])
+        self.thin = salt.utils.thin.gen_thin(self.opts['cachedir'], extra_mods=self.opts.get('thin_extra_mods'))
         self.mods = mod_data(self.fsclient)
 
     def get_pubkey(self):
@@ -385,9 +385,10 @@ class SSH(object):
         returned = set()
         rets = set()
         init = False
-        if not self.targets:
-            raise salt.exceptions.SaltClientError('No matching targets found in roster.')
         while True:
+            if not self.targets:
+                log.error('No matching targets found in roster.')
+                break
             if len(running) < self.opts.get('ssh_max_procs', 25) and not init:
                 try:
                     host = next(target_iter)

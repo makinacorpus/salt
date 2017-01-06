@@ -696,6 +696,15 @@ overridden on a per-minion basis in the roster (``minion_opts``)
     minion_opts:
       gpg_keydir: /root/gpg
 
+``thin_extra_mods``
+-------------------
+
+Default: None
+
+List of additional modules, needed to be included into the Salt Thin.
+Pass a list of importable Python modules that are typically located in
+the `site-packages` Python directory so they will be also always included
+into the Salt Thin, once generated.
 
 Master Security Settings
 ========================
@@ -2288,8 +2297,19 @@ There are additional details at :ref:`salt-pillars`
 Default: ``False``
 
 This option allows for external pillar sources to be evaluated before
-:conf_master:`pillar_roots`. This allows for targeting file system pillar from
-ext_pillar.
+:conf_master:`pillar_roots`. External pillar data is evaluated separately from
+:conf_master:`pillar_roots` pillar data, and then both sets of pillar data are
+merged into a single pillar dictionary, so the value of this config option will
+have an impact on which key "wins" when there is one of the same name in both
+the external pillar data and :conf_master:`pillar_roots` pillar data. By
+setting this option to ``True``, ext_pillar keys will be overridden by
+:conf_master:`pillar_roots`, while leaving it as ``False`` will allow
+ext_pillar keys to override those from :conf_master:`pillar_roots`.
+
+.. note::
+    For a while, this config option did not work as specified above, because of
+    a bug in Pillar compilation. This bug has been resolved in version 2016.3.4
+    and later.
 
 .. code-block:: yaml
 

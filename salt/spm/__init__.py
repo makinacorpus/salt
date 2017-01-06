@@ -323,7 +323,7 @@ class SPMClient(object):
                     metadata = yaml.safe_load(rpm)
             else:
                 response = http.query(dl_path, text=True)
-                metadata = response.get('text', {})
+                metadata = yaml.safe_load(response.get('text', '{}'))
             cache_path = '{0}/{1}.p'.format(
                 self.opts['spm_cache_dir'],
                 repo
@@ -426,7 +426,9 @@ class SPMClient(object):
                     dl_path = dl_path.replace('file://', '')
                     shutil.copyfile(dl_path, out_file)
                 else:
-                    http.query(dl_path, text_out=out_file)
+                    response = http.query(dl_path, text=True)
+                    with salt.utils.fopen(out_file, 'w') as outf:
+                        outf.write(response.get('text'))
 
                 self._local_install((None, out_file), package)
                 return

@@ -1369,7 +1369,7 @@ def diff(cwd,
          cached=False,
          paths=None):
     '''
-    .. versionadded:: 2015.8.12,2016.3.3,Carbon
+    .. versionadded:: 2015.8.12,2016.3.3,2016.11.0
 
     Interface to `git-diff(1)`_
 
@@ -1718,7 +1718,8 @@ def init(cwd,
             separate_git_dir = str(separate_git_dir)
         command.append('--separate-git-dir={0}'.format(separate_git_dir))
     if shared is not None:
-        if isinstance(shared, six.integer_types):
+        if isinstance(shared, six.integer_types) \
+                and not isinstance(shared, bool):
             shared = '0' + str(shared)
         elif not isinstance(shared, six.string_types):
             # Using lower here because booleans would be capitalized when
