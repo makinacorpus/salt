@@ -675,6 +675,32 @@ class FileTest(integration.ModuleCase, integration.SaltReturnAssertsMixIn):
             if os.path.isdir(name):
                 shutil.rmtree(name, ignore_errors=True)
 
+    def test_recurse_specific_env_in_url(self):
+        '''
+        file.recurse passing __env__
+        '''
+        name = os.path.join(integration.TMP, 'recurse_dir_prod_env')
+        ret = self.run_state('file.recurse',
+                             name=name,
+                             source='salt://holy?saltenv=prod')
+        try:
+            self.assertSaltTrueReturn(ret)
+            self.assertTrue(os.path.isfile(os.path.join(name, '32', 'scene')))
+        finally:
+            if os.path.isdir(name):
+                shutil.rmtree(name, ignore_errors=True)
+
+        name = os.path.join(integration.TMP, 'recurse_dir_prod_env')
+        ret = self.run_state('file.recurse',
+                             name=name,
+                             source='salt://holy?saltenv=prod')
+        try:
+            self.assertSaltTrueReturn(ret)
+            self.assertTrue(os.path.isfile(os.path.join(name, '32', 'scene')))
+        finally:
+            if os.path.isdir(name):
+                shutil.rmtree(name, ignore_errors=True)
+
     def test_test_recurse(self):
         '''
         file.recurse test interface
@@ -1207,6 +1233,11 @@ class FileTest(integration.ModuleCase, integration.SaltReturnAssertsMixIn):
             # write a line to file
             with salt.utils.fopen(name, 'w+') as fp_:
                 fp_.write('comment_me')
+
+            # Look for changes with test=True: return should be "None" at the first run
+            ret = self.run_state('file.comment', test=True, name=name, regex='^comment')
+            self.assertSaltNoneReturn(ret)
+
             # comment once
             ret = self.run_state('file.comment', name=name, regex='^comment')
             # result is positive
@@ -1222,6 +1253,11 @@ class FileTest(integration.ModuleCase, integration.SaltReturnAssertsMixIn):
             # line is still commented
             with salt.utils.fopen(name, 'r') as fp_:
                 self.assertTrue(fp_.read().startswith('#comment'))
+
+            # Test previously commented file returns "True" now and not "None" with test=True
+            ret = self.run_state('file.comment', test=True, name=name, regex='^comment')
+            self.assertSaltTrueReturn(ret)
+
         finally:
             os.remove(name)
 

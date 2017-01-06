@@ -5,8 +5,8 @@ Installing/Testing a Salt Release Candidate
 ===========================================
 
 It's time for a new feature release of Salt! Follow the instructions below to
-install the latest release candidate of Salt, and try :doc:`all the shiny new
-features </topics/releases/2016.3.0>`! Be sure to report any bugs you find on `Github
+install the latest release candidate of Salt, and try :ref:`all the shiny new
+features <release-2016-3-0>`! Be sure to report any bugs you find on `Github
 <https://github.com/saltstack/salt/issues/new/>`_.
 
 Installing Using Packages
@@ -23,11 +23,11 @@ Builds for a few platforms are available as part of the RC at:
     https://repo.saltstack.com/, but insert ``salt_rc/`` into the URL between
     the hostname and the remainder of the path.  For example:
 
-    .. code-block::
+    .. code-block:: none
 
         baseurl=https://repo.saltstack.com/salt_rc/yum/redhat/$releasever/$basearch/
 
-    .. code-block::
+    .. code-block:: none
 
         deb http://repo.saltstack.com/salt_rc/apt/ubuntu/14.04/amd64 jessie main
 

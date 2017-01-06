@@ -412,6 +412,7 @@ def __get_artifact(salt_source):
                     template=None,
                     source=salt_source['source'],
                     source_hash=None,
+                    source_hash_name=None,
                     user=None,
                     group=None,
                     mode=None,
@@ -531,6 +532,12 @@ def __check_dict_contains(dct, dict_name, keys, comment='', result=True):
 
 
 def __append_comment(new_comment, current_comment=''):
+    if current_comment is None and new_comment is None:
+        return ''
+    if current_comment is None:
+        return new_comment
+    if new_comment is None:
+        return current_comment
     return current_comment+'\n'+new_comment
 
 

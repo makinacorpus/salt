@@ -80,7 +80,7 @@ salt fileserver. Here's an example:
 
     Salt supports backing up managed files via the backup option. For more
     details on this functionality please review the
-    :doc:`backup_mode documentation </ref/states/backup_mode>`.
+    :ref:`backup_mode documentation <file-state-backups>`.
 
 The ``source`` parameter can also specify a file in another Salt environment.
 In this example ``foo.conf`` in the ``dev`` environment will be used instead.
@@ -97,18 +97,28 @@ In this example ``foo.conf`` in the ``dev`` environment will be used instead.
 
 .. warning::
 
-        When using a mode that includes a leading zero you must wrap the
-        value in single quotes. If the value is not wrapped in quotes it
-        will be read by YAML as an integer and evaluated as an octal.
+    When using a mode that includes a leading zero you must wrap the
+    value in single quotes. If the value is not wrapped in quotes it
+    will be read by YAML as an integer and evaluated as an octal.
+
+The ``names`` parameter, which is part of the state compiler, can be used to
+expand the contents of a single state declaration into multiple, single state
+declarations. Each item in the ``names`` list receives its own individual state
+``name`` and is converted into its own low-data structure. This is a convenient
+way to manage several files with similar attributes.
+
+There is more documentation about this feature in the
+:ref:`Names declaration<names-declaration>` section of the
+ :ref:`Highstate docs<states-highstate>`.
 
 Special files can be managed via the ``mknod`` function. This function will
 create and enforce the permissions on a special file. The function supports the
-creation of character devices, block devices, and fifo pipes. The function will
+creation of character devices, block devices, and FIFO pipes. The function will
 create the directory structure up to the special file if it is needed on the
 minion. The function will not overwrite or operate on (change major/minor
 numbers) existing special files with the exception of user, group, and
 permissions. In most cases the creation of some special files require root
-permisisons on the minion. This would require that the minion to be run as the
+permissions on the minion. This would require that the minion to be run as the
 root user. Here is an example of a character device:
 
 .. code-block:: yaml
@@ -1082,6 +1092,7 @@ def missing(name):
 def managed(name,
             source=None,
             source_hash='',
+            source_hash_name=None,
             user=None,
             group=None,
             mode=None,
@@ -1188,7 +1199,7 @@ def managed(name,
                     - source: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.tar.gz
                     - source_hash: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.hash
 
-            The following is an example of the supported source_hash format:
+            The following lines are all supported formats:
 
             .. code-block:: text
 
@@ -1198,7 +1209,7 @@ def managed(name,
 
             Debian file type ``*.dsc`` files are also supported.
 
-        **Inserting the Source Hash in the sls Data**
+        **Inserting the Source Hash in the SLS Data**
             Examples:
 
             .. code-block:: yaml
@@ -1224,6 +1235,44 @@ def managed(name,
                     - source: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.tar.gz
                     - source_hash: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.tar.gz/+md5
 
+    source_hash_name
+        When ``source_hash`` refers to a hash file, Salt will try to find the
+        correct hash by matching the filename/URI associated with that hash. By
+        default, Salt will look for the filename being managed. When managing a
+        file at path ``/tmp/foo.txt``, then the following line in a hash file
+        would match:
+
+        .. code-block:: text
+
+            acbd18db4cc2f85cedef654fccc4a4d8    foo.txt
+
+        However, sometimes a hash file will include multiple similar paths:
+
+        .. code-block:: text
+
+            37b51d194a7513e45b56f6524f2d51f2    ./dir1/foo.txt
+            acbd18db4cc2f85cedef654fccc4a4d8    ./dir2/foo.txt
+            73feffa4b7f6bb68e44cf984c85f6e88    ./dir3/foo.txt
+
+        In cases like this, Salt may match the incorrect hash. This argument
+        can be used to tell Salt which filename to match, to ensure that the
+        correct hash is identified. For example:
+
+        .. code-block:: yaml
+
+            /tmp/foo.txt:
+              file.managed:
+                - source: https://mydomain.tld/dir2/foo.txt
+                - source_hash: https://mydomain.tld/hashes
+                - source_hash_name: ./dir2/foo.txt
+
+        .. note::
+            This argument must contain the full filename entry from the
+            checksum file, as this argument is meant to disambiguate matches
+            for multiple files that have the same basename. So, in the
+            example above, simply using ``foo.txt`` would not match.
+
+        .. versionadded:: 2016.3.5
 
     user
         The user to own the file, this defaults to the user salt is running as
@@ -1270,7 +1319,8 @@ def managed(name,
         Default context passed to the template.
 
     backup
-        Overrides the default backup mode for this specific file.
+        Overrides the default backup mode for this specific file. See
+        :ref:`backup_mode documentation <file-state-backups>` for more details.
 
     show_diff
         DEPRECATED: Please use show_changes.
@@ -1627,24 +1677,6 @@ def managed(name,
         if not context:
             context = {}
         context['accumulator'] = accum_data[name]
-    if 'file.check_managed_changes' in __salt__:
-        ret['pchanges'] = __salt__['file.check_managed_changes'](
-            name,
-            source,
-            source_hash,
-            user,
-            group,
-            mode,
-            template,
-            context,
-            defaults,
-            __env__,
-            contents,
-            skip_verify,
-            **kwargs
-        )
-    else:
-        ret['pchanges'] = {}
 
     if show_diff is not None:
         show_changes = show_diff
@@ -1656,6 +1688,23 @@ def managed(name,
 
     try:
         if __opts__['test']:
+            if 'file.check_managed_changes' in __salt__:
+                ret['pchanges'] = __salt__['file.check_managed_changes'](
+                    name,
+                    source,
+                    source_hash,
+                    source_hash_name,
+                    user,
+                    group,
+                    mode,
+                    template,
+                    context,
+                    defaults,
+                    __env__,
+                    contents,
+                    skip_verify,
+                    **kwargs
+                )
             if ret['pchanges']:
                 ret['result'] = None
                 ret['comment'] = 'The file {0} is set to be changed'.format(name)
@@ -1687,6 +1736,7 @@ def managed(name,
             template,
             source,
             source_hash,
+            source_hash_name,
             user,
             group,
             mode,
@@ -2075,6 +2125,7 @@ def directory(name,
                                               dir_mode,
                                               follow_symlinks)
 
+    errors = []
     if recurse or clean:
         walk_l = list(os.walk(name))  # walk path only once and store the result
         # root: (dirs, files) structure, compatible for python2.6
@@ -2136,23 +2187,31 @@ def directory(name,
             if check_files:
                 for fn_ in files:
                     full = os.path.join(root, fn_)
-                    ret, perms = __salt__['file.check_perms'](
-                        full,
-                        ret,
-                        user,
-                        group,
-                        file_mode,
-                        follow_symlinks)
+                    try:
+                        ret, _ = __salt__['file.check_perms'](
+                            full,
+                            ret,
+                            user,
+                            group,
+                            file_mode,
+                            follow_symlinks)
+                    except CommandExecutionError as exc:
+                        if not exc.strerror.endswith('does not exist'):
+                            errors.append(exc.strerror)
             if check_dirs:
                 for dir_ in dirs:
                     full = os.path.join(root, dir_)
-                    ret, perms = __salt__['file.check_perms'](
-                        full,
-                        ret,
-                        user,
-                        group,
-                        dir_mode,
-                        follow_symlinks)
+                    try:
+                        ret, _ = __salt__['file.check_perms'](
+                            full,
+                            ret,
+                            user,
+                            group,
+                            dir_mode,
+                            follow_symlinks)
+                    except CommandExecutionError as exc:
+                        if not exc.strerror.endswith('does not exist'):
+                            errors.append(exc.strerror)
 
     if clean:
         keep = _gen_keep_files(name, require, walk_d)
@@ -2170,6 +2229,12 @@ def directory(name,
         ret['comment'] = 'Directory {0} not updated'.format(name)
     elif not ret['changes'] and ret['result']:
         ret['comment'] = 'Directory {0} is in the correct state'.format(name)
+
+    if errors:
+        ret['result'] = False
+        ret['comment'] += '\n\nThe following errors were encountered:\n'
+        for error in errors:
+            ret['comment'] += '\n- {0}'.format(error)
     return ret
 
 
@@ -2259,6 +2324,10 @@ def recurse(name,
     include_empty
         Set this to True if empty directories should also be created
         (default is False)
+
+    backup
+        Overrides the default backup mode for all replaced files. See
+        :ref:`backup_mode documentation <file-state-backups>` for more details.
 
     include_pat
         When copying, include only this pattern from the source. Default
@@ -2382,15 +2451,17 @@ def recurse(name,
 
     # Check source path relative to fileserver root, make sure it is a
     # directory
-    source_rel = source.partition('://')[2]
-    master_dirs = __salt__['cp.list_master_dirs'](__env__)
-    if source_rel not in master_dirs \
+    srcpath, senv = salt.utils.url.parse(source)
+    if senv is None:
+        senv = __env__
+    master_dirs = __salt__['cp.list_master_dirs'](saltenv=senv)
+    if srcpath not in master_dirs \
             and not any((x for x in master_dirs
-                         if x.startswith(source_rel + '/'))):
+                         if x.startswith(srcpath + '/'))):
         ret['result'] = False
         ret['comment'] = (
             'The directory {0!r} does not exist on the salt fileserver '
-            'in saltenv {1!r}'.format(source, __env__)
+            'in saltenv {1!r}'.format(srcpath, senv)
         )
         return ret
 
@@ -2529,16 +2600,15 @@ def recurse(name,
 
     keep = set()
     vdir = set()
-    srcpath = salt.utils.url.parse(source)[0]
     if not srcpath.endswith('/'):
         # we're searching for things that start with this *directory*.
         # use '/' since #master only runs on POSIX
         srcpath = srcpath + '/'
-    fns_ = __salt__['cp.list_master'](__env__, srcpath)
+    fns_ = __salt__['cp.list_master'](senv, srcpath)
     # If we are instructed to keep symlinks, then process them.
     if keep_symlinks:
         # Make this global so that emptydirs can use it if needed.
-        symlinks = __salt__['cp.list_master_symlinks'](__env__, srcpath)
+        symlinks = __salt__['cp.list_master_symlinks'](senv, srcpath)
         fns_ = process_symlinks(fns_, symlinks)
     for fn_ in fns_:
         if not fn_.strip():
@@ -2577,11 +2647,11 @@ def recurse(name,
             manage_directory(dirname)
             vdir.add(dirname)
 
-        src = salt.utils.url.create(fn_)
+        src = salt.utils.url.create(fn_, saltenv=senv)
         manage_file(dest, src)
 
     if include_empty:
-        mdirs = __salt__['cp.list_master_dirs'](__env__, srcpath)
+        mdirs = __salt__['cp.list_master_dirs'](senv, srcpath)
         for mdir in mdirs:
             if not salt.utils.check_include_exclude(
                     os.path.relpath(mdir, srcpath), include_pat, exclude_pat):
@@ -2640,43 +2710,61 @@ def line(name, content, match=None, mode=None, location=None,
 
     .. versionadded:: 2015.8.0
 
-    :param name:
+    name
         Filesystem path to the file to be edited.
 
-    :param content:
+    content
         Content of the line.
 
-    :param match:
+    match
         Match the target line for an action by
         a fragment of a string or regular expression.
 
-    :param mode:
-        :Ensure:
+        If neither ``before`` nor ``after`` are provided, and ``match``
+        is also ``None``, match becomes the ``content`` value.
+
+    mode
+        Defines how to edit a line. One of the following options is
+        required:
+
+        - ensure
             If line does not exist, it will be added.
-
-        :Replace:
-            If line already exist, it will be replaced.
-
-        :Delete:
+        - replace
+            If line already exists, it will be replaced.
+        - delete
             Delete the line, once found.
-
-        :Insert:
+        - insert
             Insert a line.
 
-    :param location:
-        :start:
-            Place the content at the beginning of the file.
+        .. note::
 
-        :end:
+            If ``mode=insert`` is used, at least one of the following
+            options must also be defined: ``location``, ``before``, or
+            ``after``. If ``location`` is used, it takes precedence
+            over the other two options.
+
+    location
+        Defines where to place content in the line. Note this option is only
+        used when ``mode=insert`` is specified. If a location is passed in, it
+        takes precedence over both the ``before`` and ``after`` kwargs. Valid
+        locations are:
+
+        - start
+            Place the content at the beginning of the file.
+        - end
             Place the content at the end of the file.
 
-    :param before:
+    before
         Regular expression or an exact case-sensitive fragment of the string.
+        This option is only used when either the ``ensure`` or ``insert`` mode
+        is defined.
 
-    :param after:
+    after
         Regular expression or an exact case-sensitive fragment of the string.
+        This option is only used when either the ``ensure`` or ``insert`` mode
+        is defined.
 
-    :param show_changes:
+    show_changes
         Output a unified diff of the old file and the new file.
         If ``False`` return a boolean if any changes were made.
         Default is ``True``
@@ -2685,16 +2773,17 @@ def line(name, content, match=None, mode=None, location=None,
             Using this option will store two copies of the file in-memory
             (the original version and the edited version) in order to generate the diff.
 
-    :param backup:
+    backup
         Create a backup of the original file with the extension:
         "Year-Month-Day-Hour-Minutes-Seconds".
 
-    :param quiet:
+    quiet
         Do not raise any exceptions. E.g. ignore the fact that the file that is
         tried to be edited does not exist and nothing really happened.
 
-    :param indent:
-        Keep indentation with the previous line.
+    indent
+        Keep indentation with the previous line. This option is not considered when
+        the ``delete`` mode is specified.
 
     .. code-block: yaml
 
@@ -2748,7 +2837,8 @@ def replace(name,
             prepend_if_not_found=False,
             not_found_content=None,
             backup='.bak',
-            show_changes=True):
+            show_changes=True,
+            ignore_if_missing=False):
     r'''
     Maintain an edit in a file.
 
@@ -2830,6 +2920,13 @@ def replace(name,
             diff. This may not normally be a concern, but could impact
             performance if used with large files.
 
+    ignore_if_missing : False
+        .. versionadded:: 2016.3.4
+
+        Controls what to do if the file is missing. If set to ``False``, the
+        state will display an error raised by the execution module. If set to
+        ``True``, the state will simply report no changes.
+
     For complex regex patterns, it can be useful to avoid the need for complex
     quoting and escape sequences by making use of YAML's multiline string
     syntax.
@@ -2873,7 +2970,8 @@ def replace(name,
                                        not_found_content=not_found_content,
                                        backup=backup,
                                        dry_run=__opts__['test'],
-                                       show_changes=show_changes)
+                                       show_changes=show_changes,
+                                       ignore_if_missing=ignore_if_missing)
 
     if changes:
         ret['pchanges']['diff'] = changes
@@ -3247,9 +3345,16 @@ def comment(name, regex, char='#', backup='.bak'):
         return _error(ret, check_msg)
 
     unanchor_regex = regex.lstrip('^').rstrip('$')
+    comment_regex = char + unanchor_regex
+
+    # Check if the line is already commented
+    if __salt__['file.search'](name, comment_regex, multiline=True):
+        commented = True
+    else:
+        commented = False
 
     # Make sure the pattern appears in the file before continuing
-    if not __salt__['file.search'](name, regex, multiline=True):
+    if commented or not __salt__['file.search'](name, regex, multiline=True):
         if __salt__['file.search'](name, unanchor_regex, multiline=True):
             ret['comment'] = 'Pattern already commented'
             ret['result'] = True
@@ -4622,6 +4727,7 @@ def serialize(name,
             name=name,
             source=None,
             source_hash={},
+            source_hash_name=None,
             user=user,
             group=group,
             mode=mode,

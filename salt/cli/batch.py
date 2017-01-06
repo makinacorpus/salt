@@ -194,8 +194,9 @@ class Batch(object):
                                 break
                             continue
                         if self.opts.get('raw'):
-                            parts.update({part['id']: part})
-                            minion_tracker[queue]['minions'].remove(part['id'])
+                            parts.update({part['data']['id']: part})
+                            if part['data']['id'] in minion_tracker[queue]['minions']:
+                                minion_tracker[queue]['minions'].remove(part['data']['id'])
                         else:
                             parts.update(part)
                             for id in part.keys():
@@ -222,13 +223,12 @@ class Batch(object):
                     active.remove(minion)
                     if bwait:
                         wait.append(datetime.now() + timedelta(seconds=bwait))
+                # Munge retcode into return data
+                if 'retcode' in data and isinstance(data['ret'], dict) and 'retcode' not in data['ret']:
+                    data['ret']['retcode'] = data['retcode']
                 if self.opts.get('raw'):
-                    yield data
-                elif self.opts.get('failhard'):
-                    # When failhard is passed, we need to return all data to include
-                    # the retcode to use in salt/cli/salt.py later. See issue #24996.
                     ret[minion] = data
-                    yield {minion: data}
+                    yield data
                 else:
                     ret[minion] = data['ret']
                     yield {minion: data['ret']}

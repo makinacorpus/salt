@@ -55,6 +55,7 @@ be used, it is recommended to place this configuration in :ref:`Pillar
         email: <email_address>
         password: <password>
         username: <username>
+        reauth: <boolean>
 
 For example:
 
@@ -65,6 +66,22 @@ For example:
         email: foo@foo.com
         password: s3cr3t
         username: foo
+
+Reauth is an optional parameter that forces the docker login to reauthorize using
+the credentials passed in the pillar data. Defaults to false.
+
+.. versionadded:: 2016.3.5,2016.11.1
+
+For example:
+
+.. code-block:: yaml
+
+    docker-registries:
+      https://index.docker.io/v1/:
+        email: foo@foo.com
+        password: s3cr3t
+        username: foo
+        reauth: True
 
 Mulitiple registries can be configured. This can be done in one of two ways.
 The first way is to configure each registry under the ``docker-registries``
@@ -186,6 +203,14 @@ Functions
 Executing Commands Within a Running Container
 ---------------------------------------------
 
+.. note::
+    With the release of Docker 1.13.1, the Execution Driver has been removed.
+    Starting in versions 2016.3.6, 2016.11.4, and Nitrogen, Salt defaults to
+    using ``docker exec`` to run commands in containers, however for older Salt
+    releases it will be necessary to set the ``docker.exec_driver`` config
+    option to either ``docker-exec`` or ``nsenter`` for Docker versions 1.13.1
+    and newer.
+
 Multiple methods exist for executing commands within Docker containers:
 
 - lxc-attach_: Default for older versions of docker
@@ -247,7 +272,6 @@ import distutils.version  # pylint: disable=import-error,no-name-in-module,unuse
 import fnmatch
 import functools
 import gzip
-import inspect as inspect_module
 import json
 import logging
 import os
@@ -261,6 +285,7 @@ import time
 # Import Salt libs
 from salt.exceptions import CommandExecutionError, SaltInvocationError
 from salt.ext.six.moves import map  # pylint: disable=import-error,redefined-builtin
+from salt.utils.args import get_function_argspec as _argspec
 from salt.utils.decorators \
     import identical_signature_wrapper as _mimic_signature
 import salt.utils
@@ -271,10 +296,21 @@ import salt.ext.six as six
 # pylint: disable=import-error
 try:
     import docker
-    import docker.utils
     HAS_DOCKER_PY = True
 except ImportError:
     HAS_DOCKER_PY = False
+
+# These next two imports are only necessary to have access to the needed
+# functions so that we can get argspecs for the container config, host config,
+# and networking config (see the get_client_args() function).
+try:
+    import docker.types
+except ImportError:
+    pass
+try:
+    import docker.utils
+except ImportError:
+    pass
 
 try:
     PY_VERSION = sys.version_info[0]
@@ -559,6 +595,17 @@ def __virtual__():
     return (False, 'Docker module could not get imported')
 
 
+class DockerJSONDecoder(json.JSONDecoder):
+    def decode(self, s, _w=None):
+        objs = []
+        for line in s.splitlines():
+            if not line:
+                continue
+            obj, _ = self.raw_decode(line)
+            objs.append(obj)
+        return objs
+
+
 def _get_docker_py_versioninfo():
     '''
     Returns the version_info tuple from docker-py
@@ -739,7 +786,11 @@ def _get_client(timeout=None):
             # it's not defined by user.
             client_kwargs['version'] = 'auto'
 
-        __context__['docker.client'] = docker.Client(**client_kwargs)
+        try:
+            __context__['docker.client'] = docker.Client(**client_kwargs)
+        except AttributeError:
+            # docker-py 2.0 renamed this client attribute
+            __context__['docker.client'] = docker.APIClient(**client_kwargs)
 
     # Set a new timeout if one was passed
     if timeout is not None and __context__['docker.client'].timeout != timeout:
@@ -800,10 +851,12 @@ def _get_exec_driver():
             __context__[contextkey] = from_config
             return from_config
 
-        # For old versions of docker, lxc was the only supported driver.
-        # This is a sane default.
-        driver = info().get('ExecutionDriver', 'lxc-')
-        if driver.startswith('lxc-'):
+        # The execution driver was removed in Docker 1.13.1, docker-exec is now
+        # the default.
+        driver = info().get('ExecutionDriver', 'docker-exec')
+        if driver == 'docker-exec':
+            __context__[contextkey] = driver
+        elif driver.startswith('lxc-'):
             __context__[contextkey] = 'lxc-attach'
         elif driver.startswith('native-') and HAS_NSENTER:
             __context__[contextkey] = 'nsenter'
@@ -942,7 +995,8 @@ def _image_wrapper(attr, *args, **kwargs):
                     creds['username'],
                     password=creds['password'],
                     email=creds.get('email'),
-                    registry=registry)
+                    registry=registry,
+                    reauth=creds.get('reauth', False))
         except KeyError:
             raise SaltInvocationError(
                 err.format('Incomplete', ' for registry {0}'.format(registry))
@@ -2961,7 +3015,7 @@ def create(image,
     # https://docs.docker.com/engine/reference/api/docker_remote_api_v1.15/#create-a-container
     if salt.utils.version_cmp(version()['ApiVersion'], '1.15') > 0:
         client = __context__['docker.client']
-        host_config_args = inspect_module.getargspec(docker.utils.create_host_config).args
+        host_config_args = get_client_args()['host_config']
         create_kwargs['host_config'] = client.create_host_config(
             **dict((arg, create_kwargs.pop(arg, None)) for arg in host_config_args if arg != 'version')
         )
@@ -3459,7 +3513,9 @@ def build(path=None,
             .format(image)
         )
 
-    stream_data = [json.loads(x) for x in response]
+    stream_data = []
+    for line in response:
+        stream_data.extend(json.loads(line, cls=DockerJSONDecoder))
     errors = []
     # Iterate through API response and collect information
     for item in stream_data:
@@ -5457,3 +5513,77 @@ def script_retcode(name,
                    ignore_retcode=ignore_retcode,
                    use_vt=use_vt,
                    keep_env=keep_env)['retcode']
+
+
+def get_client_args():
+    '''
+    .. versionadded:: 2016.3.6,2016.11.4,Nitrogen
+
+    Returns the args for docker-py's `low-level API`_, organized by container
+    config, host config, and networking config.
+
+    .. _`low-level API`: http://docker-py.readthedocs.io/en/stable/api.html
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt myminion docker.get_client_args
+    '''
+    try:
+        config_args = _argspec(docker.types.ContainerConfig.__init__).args
+    except AttributeError:
+        try:
+            config_args = _argspec(docker.utils.create_container_config).args
+        except AttributeError:
+            raise CommandExecutionError(
+                'Failed to get create_container_config argspec'
+            )
+
+    try:
+        host_config_args = \
+            _argspec(docker.types.HostConfig.__init__).args
+    except AttributeError:
+        try:
+            host_config_args = _argspec(docker.utils.create_host_config).args
+        except AttributeError:
+            raise CommandExecutionError(
+                'Failed to get create_host_config argspec'
+            )
+
+    try:
+        endpoint_config_args = \
+            _argspec(docker.types.EndpointConfig.__init__).args
+    except AttributeError:
+        try:
+            endpoint_config_args = \
+                _argspec(docker.utils.create_endpoint_config).args
+        except AttributeError:
+            raise CommandExecutionError(
+                'Failed to get create_host_config argspec'
+            )
+
+    for arglist in (config_args, host_config_args, endpoint_config_args):
+        try:
+            # The API version is passed automagically by the API code that
+            # imports these classes/functions and is not an arg that we will be
+            # passing, so remove it if present.
+            arglist.remove('version')
+        except ValueError:
+            pass
+
+    # Remove any args in host or networking config from the main config dict.
+    # This keeps us from accidentally allowing args that have been moved from
+    # the container config to the host config (but are still accepted by
+    # create_container_config so warnings can be issued).
+    for arglist in (host_config_args, endpoint_config_args):
+        for item in arglist:
+            try:
+                config_args.remove(item)
+            except ValueError:
+                # Arg is not in config_args
+                pass
+
+    return {'config': config_args,
+            'host_config': host_config_args,
+            'networking_config': endpoint_config_args}

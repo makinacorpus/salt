@@ -656,7 +656,7 @@ class State(object):
         self._pillar_enc = pillar_enc
         self.opts['pillar'] = self._gather_pillar()
         self.state_con = context or {}
-        self.load_modules(proxy=proxy)
+        self.load_modules()
         self.active = set()
         self.mod_init = set()
         self.pre = {}
@@ -856,7 +856,8 @@ class State(object):
         if self.states_loader == 'thorium':
             self.states = salt.loader.thorium(self.opts, self.functions, {})  # TODO: Add runners
         else:
-            self.states = salt.loader.states(self.opts, self.functions, self.utils, self.serializers)
+            self.states = salt.loader.states(self.opts, self.functions, self.utils,
+                                             self.serializers, proxy=self.proxy)
 
     def load_modules(self, data=None, proxy=None):
         '''
@@ -866,7 +867,7 @@ class State(object):
         self.utils = salt.loader.utils(self.opts)
         self.functions = salt.loader.minion_mods(self.opts, self.state_con,
                                                  utils=self.utils,
-                                                 proxy=proxy)
+                                                 proxy=self.proxy)
         if isinstance(data, dict):
             if data.get('provider', False):
                 if isinstance(data['provider'], str):
@@ -906,7 +907,7 @@ class State(object):
                 log.error('Error encountered during module reload. Modules were not reloaded.')
             except TypeError:
                 log.error('Error encountered during module reload. Modules were not reloaded.')
-        self.load_modules(proxy=self.proxy)
+        self.load_modules()
         if not self.opts.get('local', False) and self.opts.get('multiprocessing', True):
             self.functions['saltutil.refresh_modules']()
 
@@ -1640,8 +1641,9 @@ class State(object):
         Call a state directly with the low data structure, verify data
         before processing.
         '''
-        start_time = datetime.datetime.now()
-        log.info('Running state [{0}] at time {1}'.format(low['name'], start_time.time().isoformat()))
+        utc_start_time = datetime.datetime.utcnow()
+        local_start_time = utc_start_time - (datetime.datetime.utcnow() - datetime.datetime.now())
+        log.info('Running state [{0}] at time {1}'.format(low['name'], local_start_time.time().isoformat()))
         errors = self.verify_data(low)
         if errors:
             ret = {
@@ -1775,14 +1777,17 @@ class State(object):
         self.__run_num += 1
         format_log(ret)
         self.check_refresh(low, ret)
-        finish_time = datetime.datetime.now()
-        ret['start_time'] = start_time.time().isoformat()
-        delta = (finish_time - start_time)
+        utc_finish_time = datetime.datetime.utcnow()
+        timezone_delta = datetime.datetime.utcnow() - datetime.datetime.now()
+        local_finish_time = utc_finish_time - timezone_delta
+        local_start_time = utc_start_time - timezone_delta
+        ret['start_time'] = local_start_time.time().isoformat()
+        delta = (utc_finish_time - utc_start_time)
         # duration in milliseconds.microseconds
         duration = (delta.seconds * 1000000 + delta.microseconds)/1000.0
         ret['duration'] = duration
         ret['__id__'] = low['__id__']
-        log.info('Completed state [{0}] at time {1} duration_in_ms={2}'.format(low['name'], finish_time.time().isoformat(), duration))
+        log.info('Completed state [{0}] at time {1} duration_in_ms={2}'.format(low['name'], local_finish_time.time().isoformat(), duration))
         return ret
 
     def call_chunks(self, chunks):
@@ -2765,12 +2770,8 @@ class BaseHighState(object):
         '''
         if not self.opts['autoload_dynamic_modules']:
             return
-        if self.opts.get('local', False):
-            syncd = self.state.functions['saltutil.sync_all'](list(matches),
-                                                              refresh=False)
-        else:
-            syncd = self.state.functions['saltutil.sync_all'](list(matches),
-                                                              refresh=False)
+        syncd = self.state.functions['saltutil.sync_all'](list(matches),
+                                                          refresh=False)
         if syncd['grains']:
             self.opts['grains'] = salt.loader.grains(self.opts)
             self.state.opts['pillar'] = self.state._gather_pillar()
@@ -3353,6 +3354,7 @@ class HighState(BaseHighState):
                            mocked=mocked,
                            loader=loader)
         self.matcher = salt.minion.Matcher(self.opts)
+        self.proxy = proxy
 
         # tracks all pydsl state declarations globally across sls files
         self._pydsl_all_decls = {}

@@ -89,7 +89,9 @@ def get(key, default='', delimiter=DEFAULT_TARGET_DELIM):
 
 
     :param delimiter:
-        Specify an alternate delimiter to use when traversing a nested dict
+        Specify an alternate delimiter to use when traversing a nested dict.
+        This is useful for when the desired key contains a colon. See CLI
+        example below for usage.
 
         .. versionadded:: 2014.7.0
 
@@ -98,6 +100,7 @@ def get(key, default='', delimiter=DEFAULT_TARGET_DELIM):
     .. code-block:: bash
 
         salt '*' grains.get pkg:apache
+        salt '*' grains.get abc::def|ghi delimiter='|'
     '''
     return salt.utils.traverse_dict_and_list(__grains__,
                                              key,
@@ -189,13 +192,17 @@ def item(*args, **kwargs):
     return ret
 
 
-def setvals(grains, destructive=False):
+def setvals(grains, destructive=False, refresh=True):
     '''
     Set new grains values in the grains config file
 
     destructive
         If an operation results in a key being removed, delete the key, too.
         Defaults to False.
+
+    refresh
+        Refresh minion grains using saltutil.sync_grains.
+        Defaults to True.
 
     CLI Example:
 
@@ -272,12 +279,12 @@ def setvals(grains, destructive=False):
         log.error(msg.format(fn_))
     if not __opts__.get('local', False):
         # Sync the grains
-        __salt__['saltutil.sync_grains']()
+        __salt__['saltutil.sync_grains'](refresh=refresh)
     # Return the grains we just set to confirm everything was OK
     return new_grains
 
 
-def setval(key, val, destructive=False):
+def setval(key, val, destructive=False, refresh=True):
     '''
     Set a grains value in the grains config file
 
@@ -291,6 +298,10 @@ def setval(key, val, destructive=False):
         If an operation results in a key being removed, delete the key, too.
         Defaults to False.
 
+    refresh
+        Refresh minion grains using saltutil.sync_grains.
+        Defaults to True.
+
     CLI Example:
 
     .. code-block:: bash
@@ -298,7 +309,7 @@ def setval(key, val, destructive=False):
         salt '*' grains.setval key val
         salt '*' grains.setval key "{'sub-key': 'val', 'sub-key2': 'val2'}"
     '''
-    return setvals({key: val}, destructive)
+    return setvals({key: val}, destructive, refresh)
 
 
 def append(key, val, convert=False, delimiter=DEFAULT_TARGET_DELIM):

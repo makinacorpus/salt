@@ -192,7 +192,7 @@ def query(url,
     log_url = sanitize_url(url_full, hide_fields)
 
     log.debug('Requesting URL {0} using {1} method'.format(log_url, method))
-    if method == 'POST':
+    if method == 'POST' and log.isEnabledFor(logging.TRACE):
         # Make sure no secret fields show up in logs
         if isinstance(data, dict):
             log_data = data.copy()
@@ -463,46 +463,29 @@ def query(url,
         supports_max_body_size = 'max_body_size' in client_argspec.args
 
         try:
-            if supports_max_body_size:
-                result = HTTPClient(max_body_size=max_body).fetch(
-                    url_full,
-                    method=method,
-                    headers=header_dict,
-                    auth_username=username,
-                    auth_password=password,
-                    body=data,
-                    validate_cert=verify_ssl,
-                    allow_nonstandard_methods=True,
-                    streaming_callback=streaming_callback,
-                    header_callback=header_callback,
-                    request_timeout=timeout,
-                    proxy_host=proxy_host,
-                    proxy_port=proxy_port,
-                    proxy_username=proxy_username,
-                    proxy_password=proxy_password,
-                    raise_error=raise_error,
-                    **req_kwargs
-                )
-            else:
-                result = HTTPClient().fetch(
-                    url_full,
-                    method=method,
-                    headers=header_dict,
-                    auth_username=username,
-                    auth_password=password,
-                    body=data,
-                    validate_cert=verify_ssl,
-                    allow_nonstandard_methods=True,
-                    streaming_callback=streaming_callback,
-                    header_callback=header_callback,
-                    request_timeout=timeout,
-                    proxy_host=proxy_host,
-                    proxy_port=proxy_port,
-                    proxy_username=proxy_username,
-                    proxy_password=proxy_password,
-                    raise_error=raise_error,
-                    **req_kwargs
-                )
+            download_client = HTTPClient(max_body_size=max_body) \
+                if supports_max_body_size \
+                else HTTPClient()
+            result = download_client.fetch(
+                url_full,
+                method=method,
+                headers=header_dict,
+                auth_username=username,
+                auth_password=password,
+                body=data,
+                validate_cert=verify_ssl,
+                allow_nonstandard_methods=True,
+                streaming_callback=streaming_callback,
+                header_callback=header_callback,
+                request_timeout=timeout,
+                proxy_host=proxy_host,
+                proxy_port=proxy_port,
+                proxy_username=proxy_username,
+                proxy_password=proxy_password,
+                raise_error=raise_error,
+                decompress_response=False,
+                **req_kwargs
+            )
         except tornado.httpclient.HTTPError as exc:
             ret['status'] = exc.code
             ret['error'] = str(exc)
@@ -546,7 +529,7 @@ def query(url,
         log.trace(('Cannot Trace Log Response Text: {0}. This may be due to '
                   'incompatibilities between requests and logging.').format(exc))
 
-    if text_out is not None and os.path.exists(text_out):
+    if text_out is not None:
         with salt.utils.fopen(text_out, 'w') as tof:
             tof.write(result_text)
 

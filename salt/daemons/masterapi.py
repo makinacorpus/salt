@@ -13,6 +13,7 @@ import re
 import time
 import stat
 import tempfile
+import msgpack
 
 # Import salt libs
 import salt.crypt
@@ -146,7 +147,12 @@ def clean_expired_tokens(opts):
         for token in filenames:
             token_path = os.path.join(dirpath, token)
             with salt.utils.fopen(token_path) as token_file:
-                token_data = serializer.loads(token_file.read())
+                try:
+                    token_data = serializer.loads(token_file.read())
+                except msgpack.UnpackValueError:
+                    # Bad token file or empty. Remove.
+                    os.remove(token_path)
+                    return
                 if 'expire' not in token_data or token_data.get('expire', 0) < time.time():
                     try:
                         os.remove(token_path)
@@ -753,12 +759,13 @@ class RemoteFuncs(object):
             return False
         if 'events' in load:
             for event in load['events']:
-                self.event.fire_event(event, event['tag'])  # old dup event
+                if 'data' in event:
+                    event_data = event['data']
+                else:
+                    event_data = event
+                self.event.fire_event(event_data, event['tag'])  # old dup event
                 if load.get('pretag') is not None:
-                    if 'data' in event:
-                        self.event.fire_event(event['data'], tagify(event['tag'], base=load['pretag']))
-                    else:
-                        self.event.fire_event(event, tagify(event['tag'], base=load['pretag']))
+                    self.event.fire_event(event_data, tagify(event['tag'], base=load['pretag']))
         else:
             tag = load['tag']
             self.event.fire_event(load, tag)

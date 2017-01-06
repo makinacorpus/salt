@@ -8,7 +8,7 @@ The OpenNebula cloud module is used to control access to an OpenNebula cloud.
 .. versionadded:: 2014.7.0
 
 :depends: lxml
-:depends: OpenNebula installation running version ``4.14``.
+:depends: OpenNebula installation running version ``4.14`` or later.
 
 Use of this module requires the ``xml_rpc``, ``user``, and ``password``
 parameters to be set.
@@ -86,6 +86,7 @@ try:
 except ImportError:
     HAS_XML_LIBS = False
 
+
 # Get Logging Started
 log = logging.getLogger(__name__)
 
@@ -147,10 +148,11 @@ def avail_images(call=None):
 
     server, user, password = _get_xml_rpc()
     auth = ':'.join([user, password])
-    image_pool = server.one.imagepool.info(auth, -1, -1, -1)[1]
+
+    image_pool = server.one.imagepool.info(auth, -2, -1, -1)[1]
 
     images = {}
-    for image in etree.XML(image_pool):
+    for image in _get_xml(image_pool):
         images[image.find('NAME').text] = _xml_to_dict(image)
 
     return images
@@ -180,7 +182,7 @@ def avail_locations(call=None):
     host_pool = server.one.hostpool.info(auth)[1]
 
     locations = {}
-    for host in etree.XML(host_pool):
+    for host in _get_xml(host_pool):
         locations[host.find('NAME').text] = _xml_to_dict(host)
 
     return locations
@@ -227,7 +229,7 @@ def list_clusters(call=None):
     cluster_pool = server.one.clusterpool.info(auth)[1]
 
     clusters = {}
-    for cluster in etree.XML(cluster_pool):
+    for cluster in _get_xml(cluster_pool):
         clusters[cluster.find('NAME').text] = _xml_to_dict(cluster)
 
     return clusters
@@ -255,7 +257,7 @@ def list_datastores(call=None):
     datastore_pool = server.one.datastorepool.info(auth)[1]
 
     datastores = {}
-    for datastore in etree.XML(datastore_pool):
+    for datastore in _get_xml(datastore_pool):
         datastores[datastore.find('NAME').text] = _xml_to_dict(datastore)
 
     return datastores
@@ -358,10 +360,10 @@ def list_security_groups(call=None):
 
     server, user, password = _get_xml_rpc()
     auth = ':'.join([user, password])
-    secgroup_pool = server.one.secgrouppool.info(auth, -1, -1, -1)[1]
+    secgroup_pool = server.one.secgrouppool.info(auth, -2, -1, -1)[1]
 
     groups = {}
-    for group in etree.XML(secgroup_pool):
+    for group in _get_xml(secgroup_pool):
         groups[group.find('NAME').text] = _xml_to_dict(group)
 
     return groups
@@ -386,10 +388,10 @@ def list_templates(call=None):
 
     server, user, password = _get_xml_rpc()
     auth = ':'.join([user, password])
-    template_pool = server.one.templatepool.info(auth, -1, -1, -1)[1]
+    template_pool = server.one.templatepool.info(auth, -2, -1, -1)[1]
 
     templates = {}
-    for template in etree.XML(template_pool):
+    for template in _get_xml(template_pool):
         templates[template.find('NAME').text] = _xml_to_dict(template)
 
     return templates
@@ -414,10 +416,10 @@ def list_vns(call=None):
 
     server, user, password = _get_xml_rpc()
     auth = ':'.join([user, password])
-    vn_pool = server.one.vnpool.info(auth, -1, -1, -1)[1]
+    vn_pool = server.one.vnpool.info(auth, -2, -1, -1)[1]
 
     vns = {}
-    for v_network in etree.XML(vn_pool):
+    for v_network in _get_xml(vn_pool):
         vns[v_network.find('NAME').text] = _xml_to_dict(v_network)
 
     return vns
@@ -496,6 +498,33 @@ def stop(name, call=None):
     log.info('Stopping node {0}'.format(name))
 
     return vm_action(name, kwargs={'action': 'stop'}, call=call)
+
+
+def get_one_version(kwargs=None, call=None):
+    '''
+    Returns the OpenNebula version.
+
+    .. versionadded:: 2016.3.5
+
+    CLI Example:
+
+    .. code-block:: bash
+
+        salt-cloud -f get_one_version one_provider_name
+    '''
+
+    if call == 'action':
+        raise SaltCloudSystemExit(
+            'The get_cluster_id function must be called with -f or --function.'
+        )
+
+    if kwargs is None:
+        kwargs = {}
+
+    server, user, password = _get_xml_rpc()
+    auth = ':'.join([user, password])
+
+    return server.one.system.version(auth)[1]
 
 
 def get_cluster_id(kwargs=None, call=None):
@@ -1394,7 +1423,7 @@ def image_info(call=None, kwargs=None):
 
     info = {}
     response = server.one.image.info(auth, int(image_id))[1]
-    tree = etree.XML(response)
+    tree = _get_xml(response)
     info[tree.find('NAME').text] = _xml_to_dict(tree)
 
     return info
@@ -2054,7 +2083,7 @@ def secgroup_info(call=None, kwargs=None):
 
     info = {}
     response = server.one.secgroup.info(auth, int(secgroup_id))[1]
-    tree = etree.XML(response)
+    tree = _get_xml(response)
     info[tree.find('NAME').text] = _xml_to_dict(tree)
 
     return info
@@ -3274,7 +3303,7 @@ def vm_info(name, call=None):
         return response[1]
     else:
         info = {}
-        tree = etree.XML(response[1])
+        tree = _get_xml(response[1])
         info[tree.find('NAME').text] = _xml_to_dict(tree)
         return info
 
@@ -3421,7 +3450,7 @@ def vm_monitoring(name, call=None):
         return {}
     else:
         info = {}
-        for vm_ in etree.XML(response[1]):
+        for vm_ in _get_xml(response[1]):
             info[vm_.find('ID').text] = _xml_to_dict(vm_)
         return info
 
@@ -4163,7 +4192,7 @@ def vn_info(call=None, kwargs=None):
         return response[1]
     else:
         info = {}
-        tree = etree.XML(response[1])
+        tree = _get_xml(response[1])
         info[tree.find('NAME').text] = _xml_to_dict(tree)
         return info
 
@@ -4367,6 +4396,21 @@ def _get_node(name):
     return {}
 
 
+def _get_xml(xml_str):
+    '''
+    Intrepret the data coming from opennebula and raise if it's not XML.
+    '''
+    try:
+        xml_data = etree.XML(xml_str)
+    # XMLSyntaxError seems to be only available from lxml, but that is the xml
+    # library loaded by this module
+    except etree.XMLSyntaxError as err:
+        # opennebula returned invalid XML, which could be an error message, so
+        # log it
+        raise SaltCloudSystemExit('opennebula returned: {0}'.format(xml_str))
+    return xml_data
+
+
 def _get_xml_rpc():
     '''
     Uses the OpenNebula cloud provider configurations to connect to the
@@ -4406,10 +4450,10 @@ def _list_nodes(full=False):
     server, user, password = _get_xml_rpc()
     auth = ':'.join([user, password])
 
-    vm_pool = server.one.vmpool.info(auth, -1, -1, -1, -1)[1]
+    vm_pool = server.one.vmpool.info(auth, -2, -1, -1, -1)[1]
 
     vms = {}
-    for vm in etree.XML(vm_pool):
+    for vm in _get_xml(vm_pool):
         name = vm.find('NAME').text
         vms[name] = {}
 

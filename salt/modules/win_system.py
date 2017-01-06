@@ -448,10 +448,9 @@ def get_hostname():
 
         salt 'minion-id' system.get_hostname
     '''
-    cmd = 'wmic computersystem get name'
+    cmd = 'hostname'
     ret = __salt__['cmd.run'](cmd=cmd)
-    _, hostname = ret.split("\n")
-    return hostname
+    return ret
 
 
 def set_hostname(hostname):
@@ -660,7 +659,7 @@ def unjoin_domain(username=None,
     if username and password is None:
         return 'Must specify a password if you pass a username'
 
-    NETSETUP_ACCT_DELETE = 0x2
+    NETSETUP_ACCT_DELETE = 0x4  # pylint: disable=invalid-name
 
     unjoin_options = 0x0
     if disable:

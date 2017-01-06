@@ -434,8 +434,8 @@ def apply_(mods=None,
             Argument name changed from ``env`` to ``saltenv``
 
         .. versionchanged:: 2014.7.0
-            If no saltenv is specified, the minion config will be checked for a
-            ``saltenv`` parameter and if found, it will be used. If none is
+            If no saltenv is specified, the minion config will be checked for an
+            ``environment`` parameter and if found, it will be used. If none is
             found, ``base`` will be used. In prior releases, the minion config
             was not checked and ``base`` would always be assumed when the
             saltenv was not explicitly set.
@@ -799,8 +799,8 @@ def sls(mods,
             Argument name changed from ``env`` to ``saltenv``.
 
         .. versionchanged:: 2014.7.0
-            If no saltenv is specified, the minion config will be checked for a
-            ``saltenv`` parameter and if found, it will be used. If none is
+            If no saltenv is specified, the minion config will be checked for an
+            ``environment`` parameter and if found, it will be used. If none is
             found, ``base`` will be used. In prior releases, the minion config
             was not checked and ``base`` would always be assumed when the
             saltenv was not explicitly set.
@@ -1122,7 +1122,10 @@ def sls_id(
     opts['test'] = _get_test_value(test, **kwargs)
     if 'pillarenv' in kwargs:
         opts['pillarenv'] = kwargs['pillarenv']
-    st_ = salt.state.HighState(opts)
+    try:
+        st_ = salt.state.HighState(opts, proxy=__proxy__)
+    except NameError:
+        st_ = salt.state.HighState(opts)
     if isinstance(mods, six.string_types):
         split_mods = mods.split(',')
     st_.push_active()
@@ -1641,7 +1644,7 @@ def event(tagmatch='*',
             listen=True)
 
     while True:
-        ret = sevent.get_event(full=True)
+        ret = sevent.get_event(full=True, auto_reconnect=True)
         if ret is None:
             continue
 

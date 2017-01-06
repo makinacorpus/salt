@@ -227,7 +227,7 @@ documentation, but in short:
   <salt.wheel.key>` exposes similar functionality as the ``salt-key`` CLI
   command.
 
-Most clients have variants like synchronous or asyncronous execution as well as
+Most clients have variants like synchronous or asynchronous execution as well as
 others like batch execution. See the :ref:`full list of client interfaces
 <netapi-clients>`.
 
@@ -424,7 +424,9 @@ import itertools
 import functools
 import logging
 import json
+import os
 import StringIO
+import signal
 import tarfile
 import time
 from multiprocessing import Process, Pipe
@@ -688,6 +690,8 @@ def hypermedia_handler(*args, **kwargs):
     except (salt.exceptions.SaltDaemonNotRunning,
             salt.exceptions.SaltReqTimeoutError) as exc:
         raise cherrypy.HTTPError(503, exc.strerror)
+    except (cherrypy.TimeoutError, salt.exceptions.SaltClientTimeout):
+        raise cherrypy.HTTPError(504)
     except cherrypy.CherryPyException:
         raise
     except Exception as exc:
@@ -878,12 +882,12 @@ cherrypy.tools.html_override = cherrypy.Tool('on_start_resource',
         html_override_tool, priority=53)
 cherrypy.tools.salt_token = cherrypy.Tool('on_start_resource',
         salt_token_tool, priority=55)
+cherrypy.tools.cors_tool = cherrypy.Tool('before_request_body',
+        cors_tool, priority=50)
 cherrypy.tools.salt_auth = cherrypy.Tool('before_request_body',
         salt_auth_tool, priority=60)
 cherrypy.tools.hypermedia_in = cherrypy.Tool('before_request_body',
         hypermedia_in)
-cherrypy.tools.cors_tool = cherrypy.Tool('before_request_body',
-        cors_tool, priority=30)
 cherrypy.tools.lowdata_fmt = cherrypy.Tool('before_handler',
         lowdata_fmt, priority=40)
 cherrypy.tools.hypermedia_out = cherrypy.Tool('before_handler',
@@ -2004,7 +2008,7 @@ class Events(object):
                     transport=self.opts['transport'],
                     opts=self.opts,
                     listen=True)
-            stream = event.iter_events(full=True)
+            stream = event.iter_events(full=True, auto_reconnect=True)
 
             yield u'retry: {0}\n'.format(400)
 
@@ -2178,8 +2182,14 @@ class WebsocketEndpoint(object):
                     transport=self.opts['transport'],
                     opts=self.opts,
                     listen=True)
-            stream = event.iter_events(full=True)
+            stream = event.iter_events(full=True, auto_reconnect=True)
             SaltInfo = event_processor.SaltInfo(handler)
+
+            def signal_handler(signal, frame):
+                os._exit(0)
+
+            signal.signal(signal.SIGTERM, signal_handler)
+
             while True:
                 data = next(stream)
                 if data:

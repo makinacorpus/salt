@@ -144,19 +144,20 @@ VALID_OPTS = {
     # Must also set master_sign_pubkey for this to work
     'verify_master_pubkey_sign': bool,
 
-    # If verify_master_pubkey_sign is enabled, the signature is only verified, if the public-key of the master changes.
-    # If the signature should always be verified, this can be set to True.
+    # If verify_master_pubkey_sign is enabled, the signature is only verified, if the public-key of
+    # the master changes. If the signature should always be verified, this can be set to True.
     'always_verify_signature': bool,
 
-    # The name of the file in the masters pki-directory that holds the pre-calculated signature of the masters public-key.
+    # The name of the file in the masters pki-directory that holds the pre-calculated signature of
+    # the masters public-key
     'master_pubkey_signature': str,
 
     # Instead of computing the signature for each auth-reply, use a pre-calculated signature.
     # The master_pubkey_signature must also be set for this.
     'master_use_pubkey_signature': bool,
 
-    # The key fingerprint of the higher-level master for the syndic to verify it is talking to the intended
-    # master
+    # The key fingerprint of the higher-level master for the syndic to verify it is talking to the
+    # intended master
     'syndic_finger': str,
 
     # The user under which the daemon should run
@@ -235,6 +236,9 @@ VALID_OPTS = {
 
     # A map of saltenvs and fileserver backend locations
     'pillar_roots': dict,
+
+    # The external pillars permitted to be used on-demand using pillar.ext
+    'on_demand_ext_pillar': list,
 
     # The type of hashing algorithm to use when doing file comparisons
     'hash_type': str,
@@ -326,7 +330,7 @@ VALID_OPTS = {
     'log_level': str,
 
     # The log level to log to a given file
-    'log_level_logfile': bool,
+    'log_level_logfile': str,
 
     # The format to construct dates in log files
     'log_datefmt': str,
@@ -432,8 +436,8 @@ VALID_OPTS = {
     # have an event_return(event) function!
     'event_return': str,
 
-    # The number of events to queue up in memory before pushing them down the pipe to an event returner
-    # specified by 'event_return'
+    # The number of events to queue up in memory before pushing them down the pipe to an event
+    # returner specified by 'event_return'
     'event_return_queue': int,
 
     # Only forward events to an event returner if it matches one of the tags in this list
@@ -451,8 +455,8 @@ VALID_OPTS = {
     # Used with the SECO range master tops system
     'range_server': str,
 
-    # The tcp keepalive interval to set on TCP ports. This setting can be used to tune salt connectivity
-    # issues in messy network environments with misbehaving firewalls
+    # The tcp keepalive interval to set on TCP ports. This setting can be used to tune Salt
+    # connectivity issues in messy network environments with misbehaving firewalls
     'tcp_keepalive': bool,
 
     # Sets zeromq TCP keepalive idle. May be used to tune issues with minion disconnects
@@ -477,11 +481,6 @@ VALID_OPTS = {
     # Set the zeromq high water mark on the publisher interface.
     # http://api.zeromq.org/3-2:zmq-setsockopt
     'pub_hwm': int,
-
-    # ZMQ HWM for SaltEvent pub socket
-    'salt_event_pub_hwm': int,
-    # ZMQ HWM for EventPublisher pub socket
-    'event_publisher_pub_hwm': int,
 
     # IPC buffer size
     # Refs https://github.com/saltstack/salt/issues/34215
@@ -675,7 +674,8 @@ VALID_OPTS = {
     # index
     'search_index_interval': int,
 
-    # A compound target definition. See: http://docs.saltstack.com/en/latest/topics/targeting/nodegroups.html
+    # A compound target definition.
+    # See: http://docs.saltstack.com/en/latest/topics/targeting/nodegroups.html
     'nodegroups': dict,
 
     # List-only nodegroups for salt-ssh. Each group must be formed as either a
@@ -769,6 +769,7 @@ VALID_OPTS = {
     # The length that the syndic event queue must hit before events are popped off and forwarded
     'syndic_jid_forward_cache_hwm': int,
 
+    # Salt SSH configuration
     'ssh_passwd': str,
     'ssh_port': str,
     'ssh_sudo': bool,
@@ -778,13 +779,15 @@ VALID_OPTS = {
     'ssh_scan_ports': str,
     'ssh_scan_timeout': float,
     'ssh_identities_only': bool,
+    'ssh_log_file': str,
 
     # Enable ioflo verbose logging. Warning! Very verbose!
     'ioflo_verbose': int,
 
     'ioflo_period': float,
 
-    # Set ioflo to realtime. Useful only for testing/debugging to simulate many ioflo periods very quickly.
+    # Set ioflo to realtime. Useful only for testing/debugging to simulate many ioflo periods very
+    # quickly
     'ioflo_realtime': bool,
 
     # Location for ioflo logs
@@ -842,14 +845,14 @@ VALID_OPTS = {
     # If set, all minion exec module actions will be rerouted through sudo as this user
     'sudo_user': str,
 
-    # HTTP request timeout in seconds. Applied for tornado http fetch functions like cp.get_url should be greater than
-    # overall download time.
+    # HTTP request timeout in seconds. Applied for tornado http fetch functions like cp.get_url
+    # should be greater than overall download time
     'http_request_timeout': float,
 
     # HTTP request max file content size.
     'http_max_body': int,
 
-    # Delay in seconds before executing bootstrap (salt cloud)
+    # Delay in seconds before executing bootstrap (Salt Cloud)
     'bootstrap_delay': int,
 
     # If a proxymodule has a function called 'grains', then call it during
@@ -857,8 +860,14 @@ VALID_OPTS = {
     # dictionary.  Otherwise it is assumed that the module calls the grains
     # function in a custom way and returns the data elsewhere
     #
-    # Default to False for 2016.3 and Carbon.  Switch to True for Nitrogen
+    # Default to False for 2016.3 and Carbon. Switch to True for Nitrogen
     'proxy_merge_grains_in_module': bool,
+
+    # Extra modules for Salt Thin
+    'thin_extra_mods': str,
+
+    # Default returners minion should use. List or comma-delimited string
+    'return': (str, list),
 }
 
 # default configurations
@@ -932,6 +941,7 @@ DEFAULT_MINION_OPTS = {
         'base': [salt.syspaths.BASE_PILLAR_ROOTS_DIR,
                  salt.syspaths.SPM_PILLAR_PATH]
     },
+    'on_demand_ext_pillar': ['libvirt', 'virtkey'],
     'git_pillar_base': 'master',
     'git_pillar_branch': 'master',
     'git_pillar_env': '',
@@ -1077,10 +1087,6 @@ DEFAULT_MINION_OPTS = {
     'sudo_user': '',
     'http_request_timeout': 1 * 60 * 60.0,  # 1 hour
     'http_max_body': 100 * 1024 * 1024 * 1024,  # 100GB
-    # ZMQ HWM for SaltEvent pub socket - different for minion vs. master
-    'salt_event_pub_hwm': 2000,
-    # ZMQ HWM for EventPublisher pub socket - different for minion vs. master
-    'event_publisher_pub_hwm': 1000,
     'event_match_type': 'startswith',
 }
 
@@ -1088,10 +1094,6 @@ DEFAULT_MASTER_OPTS = {
     'interface': '0.0.0.0',
     'publish_port': 4505,
     'pub_hwm': 1000,
-    # ZMQ HWM for SaltEvent pub socket - different for minion vs. master
-    'salt_event_pub_hwm': 2000,
-    # ZMQ HWM for EventPublisher pub socket - different for minion vs. master
-    'event_publisher_pub_hwm': 1000,
     'auth_mode': 1,
     'user': 'root',
     'worker_threads': 5,
@@ -1113,6 +1115,7 @@ DEFAULT_MASTER_OPTS = {
         'base': [salt.syspaths.BASE_PILLAR_ROOTS_DIR,
                  salt.syspaths.SPM_PILLAR_PATH]
     },
+    'on_demand_ext_pillar': ['libvirt', 'virtkey'],
     'thorium_interval': 0.5,
     'thorium_roots': {
         'base': [salt.syspaths.BASE_THORIUM_ROOTS_DIR],
@@ -1182,7 +1185,7 @@ DEFAULT_MASTER_OPTS = {
     'ping_on_rotate': False,
     'peer': {},
     'preserve_minion_cache': False,
-    'syndic_master': '',
+    'syndic_master': 'masterofmasters',
     'syndic_failover': 'random',
     'syndic_log_file': os.path.join(salt.syspaths.LOGS_DIR, 'syndic'),
     'syndic_pidfile': os.path.join(salt.syspaths.PIDFILE_DIR, 'salt-syndic.pid'),
@@ -1305,6 +1308,7 @@ DEFAULT_MASTER_OPTS = {
     'ssh_scan_ports': '22',
     'ssh_scan_timeout': 0.01,
     'ssh_identities_only': False,
+    'ssh_log_file': os.path.join(salt.syspaths.LOGS_DIR, 'ssh'),
     'master_floscript': os.path.join(FLO_DIR, 'master.flo'),
     'worker_floscript': os.path.join(FLO_DIR, 'worker.flo'),
     'maintenance_floscript': os.path.join(FLO_DIR, 'maint.flo'),
@@ -1340,6 +1344,7 @@ DEFAULT_MASTER_OPTS = {
     'http_max_body': 100 * 1024 * 1024 * 1024,  # 100GB
     'python2_bin': 'python2',
     'python3_bin': 'python3',
+    'thin_extra_mods': '',
 }
 
 
@@ -1356,7 +1361,7 @@ DEFAULT_PROXY_MINION_OPTS = {
 }
 
 # ----- Salt Cloud Configuration Defaults ----------------------------------->
-CLOUD_CONFIG_DEFAULTS = {
+DEFAULT_CLOUD_OPTS = {
     'verify_env': True,
     'default_include': 'cloud.conf.d/*.conf',
     # Global defaults
@@ -1396,7 +1401,7 @@ DEFAULT_SPM_OPTS = {
     'formula_path': '/srv/spm/salt',
     'pillar_path': '/srv/spm/pillar',
     'reactor_path': '/srv/spm/reactor',
-    'spm_logfile': '/var/log/salt/spm',
+    'spm_logfile': os.path.join(salt.syspaths.LOGS_DIR, 'spm'),
     'default_include': 'spm.d/*.conf',
     # spm_repos_config also includes a .d/ directory
     'spm_repos_config': '/etc/salt/spm.repos',
@@ -1496,6 +1501,11 @@ def _validate_opts(opts):
             if isinstance(val, VALID_OPTS[key]):
                 continue
 
+            # We don't know what data type sdb will return at run-time so we
+            # simply cannot check it for correctness here at start-time.
+            if isinstance(val, str) and val.startswith('sdb://'):
+                continue
+
             if hasattr(VALID_OPTS[key], '__call__'):
                 try:
                     VALID_OPTS[key](val)
@@ -1528,6 +1538,10 @@ def _validate_opts(opts):
                            type(val).__name__,
                            format_multi_opt(VALID_OPTS[key]))
             )
+
+    # Convert list to comma-delimited string for 'return' config option
+    if isinstance(opts.get('return'), list):
+        opts['return'] = ','.join(opts['return'])
 
     # RAET on Windows uses 'win32file.CreateMailslot()' for IPC. Due to this,
     # sock_dirs must start with '\\.\mailslot\' and not contain any colons.
@@ -1613,7 +1627,7 @@ def _absolute_path(path, relative_to=None):
     return path
 
 
-def load_config(path, env_var, default_path=None):
+def load_config(path, env_var, default_path=None, exit_on_config_errors=True):
     '''
     Returns configuration dict from parsing either the file described by
     ``path`` or the environment variable described by ``env_var`` as YAML.
@@ -1661,17 +1675,20 @@ def load_config(path, env_var, default_path=None):
                     ifile.readline()  # skip first line
                     out.write(ifile.read())
 
+    opts = {}
+
     if salt.utils.validate.path.is_readable(path):
         try:
             opts = _read_conf_file(path)
             opts['conf_file'] = path
-            return opts
         except salt.exceptions.SaltConfigurationError as error:
             log.error(error)
-            sys.exit(salt.defaults.exitcodes.EX_GENERIC)
+            if exit_on_config_errors:
+                sys.exit(salt.defaults.exitcodes.EX_GENERIC)
+    else:
+        log.debug('Missing configuration file: {0}'.format(path))
 
-    log.debug('Missing configuration file: {0}'.format(path))
-    return {}
+    return opts
 
 
 def include_config(include, orig_path, verbose, exit_on_config_errors=False):
@@ -1716,6 +1733,9 @@ def include_config(include, orig_path, verbose, exit_on_config_errors=False):
                 log.error(error)
                 if exit_on_config_errors:
                     sys.exit(salt.defaults.exitcodes.EX_GENERIC)
+                else:
+                    # Initialize default config if we wish to skip config errors
+                    opts = {}
 
             include = opts.get('include', [])
             if include:
@@ -1733,11 +1753,22 @@ def prepend_root_dir(opts, path_options):
     '''
     root_dir = os.path.abspath(opts['root_dir'])
     root_opt = opts['root_dir'].rstrip(os.sep)
+    def_root_dir = salt.syspaths.ROOT_DIR.rstrip(os.sep)
     for path_option in path_options:
         if path_option in opts:
             path = opts[path_option]
-            if path == root_opt or path.startswith(root_opt + os.sep):
+            # When running testsuite, salt.syspaths.ROOT_DIR is often empty
+            if def_root_dir != '' and (path == def_root_dir or path.startswith(def_root_dir + os.sep)):
+                # Remove the default root dir so we can add the override
+                path = path[len(def_root_dir):]
+            elif path == root_opt or path.startswith(root_opt + os.sep):
+                # Remove relative root dir so we can add the absolute root dir
                 path = path[len(root_opt):]
+            elif os.path.isabs(path_option):
+                # Absolute path (not default or overriden root_dir)
+                # No prepending required
+                continue
+            # Prepending the root dir
             opts[path_option] = salt.utils.path_join(root_dir, path)
 
 
@@ -1774,7 +1805,7 @@ def minion_config(path,
         minion_opts = salt.config.minion_config('/etc/salt/minion')
     '''
     if defaults is None:
-        defaults = DEFAULT_MINION_OPTS
+        defaults = DEFAULT_MINION_OPTS.copy()
 
     if path is not None and path.endswith('proxy'):
         defaults.update(DEFAULT_PROXY_MINION_OPTS)
@@ -1803,6 +1834,7 @@ def minion_config(path,
     opts = apply_minion_config(overrides, defaults,
                                cache_minion_id=cache_minion_id,
                                minion_id=minion_id)
+    apply_sdb(opts)
     _validate_opts(opts)
     return opts
 
@@ -1877,7 +1909,6 @@ def syndic_config(master_config_path,
     return opts
 
 
-# ----- Salt Cloud Configuration Functions ---------------------------------->
 def apply_sdb(opts, sdb_opts=None):
     '''
     Recurse for sdb:// links for opts
@@ -1900,12 +1931,13 @@ def apply_sdb(opts, sdb_opts=None):
     return sdb_opts
 
 
+# ----- Salt Cloud Configuration Functions ---------------------------------->
 def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
                  master_config_path=None, master_config=None,
                  providers_config_path=None, providers_config=None,
                  profiles_config_path=None, profiles_config=None):
     '''
-    Read in the salt cloud config and return the dict
+    Read in the Salt Cloud config and return the dict
     '''
     if path:
         config_dir = os.path.dirname(path)
@@ -1920,14 +1952,15 @@ def cloud_config(path, env_var='SALT_CLOUD_CONFIG', defaults=None,
     )
 
     if defaults is None:
-        defaults = CLOUD_CONFIG_DEFAULTS
+        defaults = DEFAULT_CLOUD_OPTS.copy()
+
+    # Set defaults early to override Salt Master's default config values later
+    defaults.update(overrides)
+    overrides = defaults
 
     # Load cloud configuration from any default or provided includes
-    default_include = overrides.get(
-        'default_include', defaults['default_include']
-    )
     overrides.update(
-        salt.config.include_config(default_include, path, verbose=False)
+        salt.config.include_config(overrides['default_include'], path, verbose=False)
     )
     include = overrides.get('include', [])
     overrides.update(
@@ -2130,7 +2163,7 @@ def apply_cloud_config(overrides, defaults=None):
     Return a cloud config
     '''
     if defaults is None:
-        defaults = CLOUD_CONFIG_DEFAULTS
+        defaults = DEFAULT_CLOUD_OPTS
 
     config = defaults.copy()
     if overrides:
@@ -2823,6 +2856,8 @@ def is_profile_configured(opts, provider, profile_name, vm_=None):
         linode_cloning = True
         non_image_drivers.append('linode')
         non_size_drivers.append('linode')
+    elif driver == 'gce' and 'sourceImage' in str(vm_.get('ex_disks_gce_struct')):
+        non_image_drivers.append('gce')
 
     if driver not in non_image_drivers:
         required_keys.append('image')
@@ -3068,8 +3103,10 @@ def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None, exit_on_con
                                     defaults['default_include'])
     include = overrides.get('include', [])
 
-    overrides.update(include_config(default_include, path, verbose=False), exit_on_config_errors=exit_on_config_errors)
-    overrides.update(include_config(include, path, verbose=True), exit_on_config_errors=exit_on_config_errors)
+    overrides.update(include_config(default_include, path, verbose=False),
+                     exit_on_config_errors=exit_on_config_errors)
+    overrides.update(include_config(include, path, verbose=True),
+                     exit_on_config_errors=exit_on_config_errors)
     opts = apply_master_config(overrides, defaults)
     _validate_opts(opts)
     # If 'nodegroups:' is uncommented in the master config file, and there are
@@ -3080,6 +3117,7 @@ def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None, exit_on_con
         opts['nodegroups'] = DEFAULT_MASTER_OPTS.get('nodegroups', {})
     if opts.get('transport') == 'raet' and 'aes' in opts:
         opts.pop('aes')
+    apply_sdb(opts)
     return opts
 
 
@@ -3277,17 +3315,27 @@ def client_config(path, env_var='SALT_CLIENT_CONFIG', defaults=None):
 
 def api_config(path):
     '''
-    Read in the salt master config file and add additional configs that
+    Read in the Salt Master config file and add additional configs that
     need to be stubbed out for salt-api
     '''
-    # Let's grab a copy of salt's master opts
-    opts = client_config(path, defaults=DEFAULT_MASTER_OPTS)
-    # Let's override them with salt-api's required defaults
-    api_opts = {
+    # Let's grab a copy of salt-api's required defaults
+    opts = DEFAULT_API_OPTS
+
+    # Let's override them with salt's master opts
+    opts.update(client_config(path, defaults=DEFAULT_MASTER_OPTS))
+
+    # Let's set the pidfile and log_file values in opts to api settings
+    opts.update({
+        'pidfile': opts.get('api_pidfile', DEFAULT_API_OPTS['api_pidfile']),
         'log_file': opts.get('api_logfile', DEFAULT_API_OPTS['api_logfile']),
-        'pidfile': opts.get('api_pidfile', DEFAULT_API_OPTS['api_pidfile'])
-    }
-    opts.update(api_opts)
+    })
+
+    prepend_root_dir(opts, [
+        'api_pidfile',
+        'api_logfile',
+        'log_file',
+        'pidfile'
+    ])
     return opts
 
 
@@ -3299,7 +3347,7 @@ def spm_config(path):
     .. versionadded:: 2015.8.0
     '''
     # Let's grab a copy of salt's master default opts
-    defaults = DEFAULT_MASTER_OPTS
+    defaults = DEFAULT_MASTER_OPTS.copy()
     # Let's override them with spm's required defaults
     defaults.update(DEFAULT_SPM_OPTS)
 

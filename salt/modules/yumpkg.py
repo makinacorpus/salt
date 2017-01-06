@@ -286,7 +286,7 @@ def _get_yum_config():
         # fall back to parsing the config ourselves
         # Look for the config the same order yum does
         fn = None
-        paths = ('/etc/yum/yum.conf', '/etc/yum.conf')
+        paths = ('/etc/yum/yum.conf', '/etc/yum.conf', '/etc/dnf/dnf.conf')
         for path in paths:
             if os.path.exists(path):
                 fn = path
@@ -412,34 +412,14 @@ def latest_version(*names, **kwargs):
     if len(names) == 0:
         return ''
 
-    # Initialize the return dict with empty strings, and populate namearch_map.
-    # namearch_map will provide a means of distinguishing between multiple
-    # matches for the same package name, for example a target of 'glibc' on an
-    # x86_64 arch would return both x86_64 and i686 versions.
-    #
-    # Note that the logic in the for loop below would place the osarch into the
-    # map for noarch packages, but those cases are accounted for when iterating
-    # through the 'yum list' results later on. If the match for that package is
-    # a noarch, then the package is assumed to be noarch, and the namearch_map
-    # is ignored.
-    ret = {}
-    namearch_map = {}
-    for name in names:
-        ret[name] = ''
-        try:
-            arch = name.rsplit('.', 1)[-1]
-            if arch not in salt.utils.pkg.rpm.ARCHES:
-                arch = __grains__['osarch']
-        except ValueError:
-            arch = __grains__['osarch']
-        namearch_map[name] = arch
-
     repo_arg = _get_repo_options(**kwargs)
     exclude_arg = _get_excludes_option(**kwargs)
 
     # Refresh before looking for the latest version available
     if refresh:
         refresh_db(**kwargs)
+
+    cur_pkgs = list_pkgs(versions_as_list=True)
 
     # Get available versions for specified package(s)
     cmd = [_yum(), '--quiet']
@@ -455,7 +435,6 @@ def latest_version(*names, **kwargs):
         if out['stderr']:
             # Check first if this is just a matter of the packages being
             # up-to-date.
-            cur_pkgs = list_pkgs()
             if not all([x in cur_pkgs for x in names]):
                 log.error(
                     'Problem encountered getting latest version for the '
@@ -472,13 +451,54 @@ def latest_version(*names, **kwargs):
             reverse=True
         )
 
+    def _check_cur(pkg):
+        if pkg.name in cur_pkgs:
+            for installed_version in cur_pkgs[pkg.name]:
+                # If any installed version is greater than the one found by
+                # yum/dnf list available, then it is not an upgrade.
+                if salt.utils.compare_versions(ver1=installed_version,
+                                               oper='>',
+                                               ver2=pkg.version,
+                                               cmp_func=version_cmp):
+                    return False
+            # pkg.version is greater than all installed versions
+            return True
+        else:
+            # Package is not installed
+            return True
+
+    ret = {}
     for name in names:
+        # Derive desired pkg arch (for arch-specific packages) based on the
+        # package name(s) passed to the function. On a 64-bit OS, "pkgame"
+        # would be assumed to match the osarch, while "pkgname.i686" would
+        # have an arch of "i686". This desired arch is then compared against
+        # the updates derived from _yum_pkginfo() above, so that we can
+        # distinguish an update for a 32-bit version of a package from its
+        # 64-bit counterpart.
+        try:
+            arch = name.rsplit('.', 1)[-1]
+            if arch not in salt.utils.pkg.rpm.ARCHES:
+                arch = __grains__['osarch']
+        except ValueError:
+            arch = __grains__['osarch']
+
+        # This loop will iterate over the updates derived by _yum_pkginfo()
+        # above, which have been sorted descendingly by version number,
+        # ensuring that the latest available version for the named package is
+        # examined first. The call to _check_cur() will ensure that a package
+        # seen by yum as "available" will only be detected as an upgrade if it
+        # has a version higher than all currently-installed versions of the
+        # package.
         for pkg in (x for x in updates if x.name == name):
-            if pkg.arch == 'noarch' or pkg.arch == namearch_map[name] \
+            # This if/or statement makes sure that we account for noarch
+            # packages as well as arch-specific packages.
+            if pkg.arch == 'noarch' or pkg.arch == arch \
                     or salt.utils.pkg.rpm.check_32(pkg.arch):
-                ret[name] = pkg.version
-                # no need to check another match, if there was one
-                break
+                if _check_cur(pkg):
+                    ret[name] = pkg.version
+                    # no need to check another match, if there was one
+                    break
         else:
             ret[name] = ''
 
@@ -897,7 +917,7 @@ def install(name=None,
             normalize=True,
             **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1272,7 +1292,7 @@ def upgrade(name=None,
     not be installed.
 
     .. versionchanged:: 2014.7.0
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1414,7 +1434,7 @@ def upgrade(name=None,
 
 def remove(name=None, pkgs=None, **kwargs):  # pylint: disable=W0613
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -1495,7 +1515,7 @@ def remove(name=None, pkgs=None, **kwargs):  # pylint: disable=W0613
 
 def purge(name=None, pkgs=None, **kwargs):  # pylint: disable=W0613
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -2245,17 +2265,11 @@ def mod_repo(repo, basedir=None, **kwargs):
         )
 
     # Build a list of keys to be deleted
-    todelete = ['disabled']
+    todelete = []
     for key in repo_opts:
         if repo_opts[key] != 0 and not repo_opts[key]:
             del repo_opts[key]
             todelete.append(key)
-
-    # convert disabled to enabled respectively from pkgrepo state
-    if 'enabled' not in repo_opts:
-        repo_opts['enabled'] = int(str(repo_opts.pop('disabled', False)).lower() != 'true')
-    else:
-        repo_opts.pop('disabled', False)
 
     # Add baseurl or mirrorlist to the 'todelete' list if the other was
     # specified in the repo_opts
@@ -2328,6 +2342,7 @@ def mod_repo(repo, basedir=None, **kwargs):
         if key in six.iterkeys(filerepos[repo].copy()):
             del filerepos[repo][key]
 
+    _bool_to_str = lambda x: '1' if x else '0'
     # Old file or new, write out the repos(s)
     filerepos[repo].update(repo_opts)
     content = header
@@ -2338,7 +2353,12 @@ def mod_repo(repo, basedir=None, **kwargs):
             del filerepos[stanza]['comments']
         content += '\n[{0}]'.format(stanza)
         for line in six.iterkeys(filerepos[stanza]):
-            content += '\n{0}={1}'.format(line, filerepos[stanza][line])
+            content += '\n{0}={1}'.format(
+                line,
+                filerepos[stanza][line]
+                    if not isinstance(filerepos[stanza][line], bool)
+                    else _bool_to_str(filerepos[stanza][line])
+            )
         content += '\n{0}\n'.format(comments)
 
     with salt.utils.fopen(repofile, 'w') as fileout:
@@ -2384,9 +2404,6 @@ def _parse_repo_file(filename):
                         'Failed to parse line in %s, offending line was '
                         '\'%s\'', filename, line.rstrip()
                     )
-                # YUM uses enabled field - create the disabled field so that comparisons works correctly in state
-                if comps[0].strip() == 'enabled':
-                    repos[repo]['disabled'] = comps[1] != "1"
 
     return (header, repos)
 

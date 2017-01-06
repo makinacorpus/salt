@@ -1044,10 +1044,10 @@ def format_call(fun,
             continue
         extra[key] = copy.deepcopy(value)
 
-    # We'll be showing errors to the users until Salt Carbon comes out, after
+    # We'll be showing errors to the users until Salt Oxygen comes out, after
     # which, errors will be raised instead.
     warn_until(
-        'Carbon',
+        'Oxygen',
         'It\'s time to start raising `SaltInvocationError` instead of '
         'returning warnings',
         # Let's not show the deprecation warning on the console, there's no
@@ -1084,7 +1084,7 @@ def format_call(fun,
             '{0}. If you were trying to pass additional data to be used '
             'in a template context, please populate \'context\' with '
             '\'key: value\' pairs. Your approach will work until Salt '
-            'Carbon is out.{1}'.format(
+            'Oxygen is out.{1}'.format(
                 msg,
                 '' if 'full' not in ret else ' Please update your state files.'
             )
@@ -1887,8 +1887,10 @@ def rm_rf(path):
             func(path)
         else:
             raise  # pylint: disable=E0704
-
-    shutil.rmtree(path, onerror=_onerror)
+    if os.path.isdir(path):
+        shutil.rmtree(path, onerror=_onerror)
+    else:
+        os.remove(path)
 
 
 def option(value, default='', opts=None, pillar=None):
@@ -2254,7 +2256,7 @@ def kwargs_warn_until(kwargs,
     This function is used to help deprecate unused legacy ``**kwargs`` that
     were added to function parameters lists to preserve backwards compatibility
     when removing a parameter. See
-    :doc:`the deprecation development docs </topics/development/deprecations>`
+    :ref:`the deprecation development docs <deprecations>`
     for the modern strategy for deprecating a function parameter.
 
     :param kwargs: The caller's ``**kwargs`` argument value (a ``dict``).
@@ -3012,3 +3014,11 @@ def str_version_to_evr(verstring):
         release = ''
 
     return epoch, version, release
+
+
+def substr_in_list(string_to_search_for, list_to_search):
+    '''
+    Return a boolean value that indicates whether or not a given
+    string is present in any of the strings which comprise a list
+    '''
+    return any(string_to_search_for in s for s in list_to_search)

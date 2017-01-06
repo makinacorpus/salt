@@ -31,8 +31,9 @@ def install(*args, **kwargs):
     installed(*args, **kwargs)
 
 
-def installed(name, version=None, source=None, force=False, install_args=None,
-            override_args=False, force_x86=False, package_args=None):
+def installed(name, version=None, source=None, force=False, pre_versions=False,
+              install_args=None, override_args=False, force_x86=False,
+              package_args=None):
     '''
     Installs a package if not already installed
 
@@ -48,6 +49,9 @@ def installed(name, version=None, source=None, force=False, install_args=None,
 
     force
       Reinstall the current version of an existing package. Default is false.
+
+    pre_versions
+      Include pre-release packages. Default is False.
 
     install_args
       A list of install arguments you want to pass to the installation
@@ -82,7 +86,7 @@ def installed(name, version=None, source=None, force=False, install_args=None,
            'comment': ''}
 
     # Determine if the package is installed
-    if name not in __salt__['cmd.run']('choco list --local-only'):
+    if name not in __salt__['cmd.run']('choco list --local-only --limit-output'):
         ret['changes'] = {'name': '{0} will be installed'.format(name)}
     elif force:
         ret['changes'] = {'name': '{0} is already installed but will reinstall'
@@ -97,13 +101,11 @@ def installed(name, version=None, source=None, force=False, install_args=None,
         return ret
 
     # Install the package
-    ret['changes'] = {name: __salt__['chocolatey.install'](name, version,
-                                                             source,
-                                                             force,
-                                                             install_args,
-                                                             override_args,
-                                                             force_x86,
-                                                             package_args)}
+    ret['changes'] = {name: __salt__['chocolatey.install'](
+        name=name, version=version, source=source, force=force,
+        pre_versions=pre_versions, install_args=install_args,
+        override_args=override_args, force_x86=force_x86,
+        package_args=package_args)}
 
     if 'Running chocolatey failed' not in ret['changes']:
         ret['result'] = True
@@ -164,7 +166,7 @@ def uninstalled(name, version=None, uninstall_args=None, override_args=False):
            'comment': ''}
 
     # Determine if package is installed
-    if name in __salt__['cmd.run']('choco list --local-only'):
+    if name in __salt__['cmd.run']('choco list --local-only --limit-output'):
         ret['changes'] = {'name': '{0} will be removed'.format(name)}
     else:
         ret['comment'] = 'The package {0} is not installed'.format(name)

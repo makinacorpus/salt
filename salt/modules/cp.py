@@ -307,19 +307,42 @@ def get_dir(path, dest, saltenv='base', template=None, gzip=None, env=None, **kw
     return _client().get_dir(path, dest, saltenv, gzip)
 
 
-def get_url(path, dest, saltenv='base', env=None):
+def get_url(path, dest='', saltenv='base', env=None):
     '''
-    Used to get a single file from a URL.
+    Used to get a single file from a URL
 
-    The default behaviour is to write the fetched file to the given
-    destination path. To simply return the text contents instead, set destination to
-    None.
+    path
+        A URL to download a file from. Supported URL schemes are: ``salt://``,
+        ``http://``, ``https://``, ``ftp://``, ``s3://``, ``swift://`` and
+        ``file://`` (local filesystem). If no scheme was specified, this is
+        equivalent of using ``file://``.
+        If a ``file://`` URL is given, the function just returns absolute path
+        to that file on a local filesystem.
+        The function returns ``False`` if Salt was unable to fetch a file from
+        a ``salt://`` URL.
+
+    dest
+        The default behaviour is to write the fetched file to the given
+        destination path. If this parameter is omitted or set as empty string
+        (``''``), the function places the remote file on the local filesystem
+        inside the Minion cache directory and returns the path to that file.
+
+        .. note::
+
+            To simply return the file contents instead, set destination to
+            ``None``. This works with ``salt://``, ``http://``, ``https://``
+            and ``file://`` URLs. The files fetched by ``http://`` and
+            ``https://`` will not be cached.
+
+    saltenv : base
+        Salt fileserver envrionment from which to retrieve the file. Ignored if
+        ``path`` is not a ``salt://`` URL.
 
     CLI Example:
 
     .. code-block:: bash
 
-        salt '*' cp.get_url salt://my/file /tmp/mine
+        salt '*' cp.get_url salt://my/file /tmp/this_file_is_mine
         salt '*' cp.get_url http://www.slashdot.org /tmp/index.html
     '''
     if env is not None:
@@ -331,15 +354,25 @@ def get_url(path, dest, saltenv='base', env=None):
         # Backwards compatibility
         saltenv = env
 
-    if dest:
-        return _client().get_url(path, dest, False, saltenv)
+    if isinstance(dest, six.string_types):
+        result = _client().get_url(path, dest, False, saltenv)
     else:
-        return _client().get_url(path, None, False, saltenv, no_cache=True)
+        result = _client().get_url(path, None, False, saltenv, no_cache=True)
+    if not result:
+        log.error(
+            'Unable to fetch file {0!r} from saltenv {1!r}.'.format(
+                path, saltenv
+            )
+        )
+    return result
 
 
 def get_file_str(path, saltenv='base', env=None):
     '''
-    Return the contents of a file from a URL
+    Download a file from a URL to the Minion cache directory and return the
+    contents of that file
+
+    Returns ``False`` if Salt was unable to cache a file from a URL.
 
     CLI Example:
 
@@ -357,15 +390,18 @@ def get_file_str(path, saltenv='base', env=None):
         saltenv = env
 
     fn_ = cache_file(path, saltenv)
-    with salt.utils.fopen(fn_, 'r') as fp_:
-        data = fp_.read()
-    return data
+    if isinstance(fn_, six.string_types):
+        with salt.utils.fopen(fn_, 'r') as fp_:
+            data = fp_.read()
+        return data
+    return fn_
 
 
 def cache_file(path, saltenv='base', env=None):
     '''
-    Used to cache a single file on the salt-minion
-    Returns the location of the new cached file on the minion
+    Used to cache a single file on the Minion
+
+    Returns the location of the new cached file on the Minion.
 
     CLI Example:
 
@@ -382,6 +418,9 @@ def cache_file(path, saltenv='base', env=None):
 
         salt '*' cp.cache_file salt://foo/bar.conf saltenv=config
         salt '*' cp.cache_file salt://foo/bar.conf?saltenv=config
+
+    If the path being cached is a ``salt://`` URI, and the path does not exist,
+    then ``False`` will be returned.
 
     .. note::
         It may be necessary to quote the URL when using the querystring method,
@@ -435,9 +474,9 @@ def cache_file(path, saltenv='base', env=None):
 
 def cache_files(paths, saltenv='base', env=None):
     '''
-    Used to gather many files from the master, the gathered files will be
+    Used to gather many files from the Master, the gathered files will be
     saved in the minion cachedir reflective to the paths retrieved from the
-    master.
+    Master
 
     CLI Example:
 

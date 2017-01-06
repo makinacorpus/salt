@@ -222,9 +222,9 @@ def __virtual__():
         return False
 
     salt.utils.warn_until(
-        'Carbon',
+        'Oxygen',
         'This driver has been deprecated and will be removed in the '
-        'Carbon release of Salt. Please use the nova driver instead.'
+        '{version} release of Salt. Please use the nova driver instead.'
     )
 
     return __virtualname__
@@ -718,6 +718,8 @@ def create(vm_):
             )
             for private_ip in private:
                 private_ip = preferred_ip(vm_, [private_ip])
+                if private_ip is False:
+                    continue
                 if salt.utils.cloud.is_public_ip(private_ip):
                     log.warn('{0} is a public IP'.format(private_ip))
                     data.public_ips.append(private_ip)

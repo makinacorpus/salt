@@ -1038,6 +1038,7 @@ _OS_NAME_MAP = {
     'manjaro': 'Manjaro',
     'antergos': 'Antergos',
     'sles': 'SUSE',
+    'slesexpand': 'RES',
     'linuxmint': 'Mint',
 }
 
@@ -1057,6 +1058,7 @@ _OS_FAMILY_MAP = {
     'OEL': 'RedHat',
     'XCP': 'RedHat',
     'XenServer': 'RedHat',
+    'RES': 'RedHat',
     'Mandrake': 'Mandriva',
     'ESXi': 'VMWare',
     'Mint': 'Debian',
@@ -1074,10 +1076,12 @@ _OS_FAMILY_MAP = {
     'SLES_SAP': 'Suse',
     'Solaris': 'Solaris',
     'SmartOS': 'Solaris',
+    'OmniOS': 'Solaris',
     'OpenIndiana Development': 'Solaris',
     'OpenIndiana': 'Solaris',
     'OpenSolaris Development': 'Solaris',
     'OpenSolaris': 'Solaris',
+    'Oracle Solaris': 'Solaris',
     'Arch ARM': 'Arch',
     'Manjaro': 'Arch',
     'Antergos': 'Arch',
@@ -1218,7 +1222,7 @@ def os_data():
                 with salt.utils.fopen('/proc/1/cmdline') as fhr:
                     init_cmdline = fhr.read().replace('\x00', ' ').split()
                     init_bin = salt.utils.which(init_cmdline[0])
-                    if init_bin is not None:
+                    if init_bin is not None and init_bin.endswith('bin/init'):
                         supported_inits = (six.b('upstart'), six.b('sysvinit'), six.b('systemd'))
                         edge_len = max(len(x) for x in supported_inits) - 1
                         try:
@@ -1247,9 +1251,11 @@ def os_data():
                                 'Unable to read from init_bin ({0}): {1}'
                                 .format(init_bin, exc)
                             )
+                    elif salt.utils.which('supervisord') in init_cmdline:
+                        grains['init'] = 'supervisord'
                     else:
-                        log.error(
-                            'Could not determine init location from command line: ({0})'
+                        log.info(
+                            'Could not determine init system from command line: ({0})'
                             .format(' '.join(init_cmdline))
                         )
 
@@ -1264,7 +1270,9 @@ def os_data():
                     key
                 )
                 grains[lsb_param] = value
-        except ImportError:
+        # Catch a NameError to workaround possible breakage in lsb_release
+        # See https://github.com/saltstack/salt/issues/37867
+        except (ImportError, NameError):
             # if the python library isn't available, default to regex
             if os.path.isfile('/etc/lsb-release'):
                 # Matches any possible format:
@@ -1420,12 +1428,19 @@ def os_data():
         grains.update(_linux_cpudata())
         grains.update(_linux_gpu_data())
     elif grains['kernel'] == 'SunOS':
-        grains['os_family'] = 'Solaris'
         if salt.utils.is_smartos():
             # See https://github.com/joyent/smartos-live/issues/224
-            uname_v = os.uname()[3]
+            uname_v = os.uname()[3]  # format: joyent_20161101T004406Z
+            uname_v = uname_v[uname_v.index('_')+1:]
             grains['os'] = grains['osfullname'] = 'SmartOS'
-            grains['osrelease'] = uname_v[uname_v.index('_')+1:]
+            # store a parsed version of YYYY.MM.DD as osrelease
+            grains['osrelease'] = ".".join([
+                uname_v.split('T')[0][0:4],
+                uname_v.split('T')[0][4:6],
+                uname_v.split('T')[0][6:8],
+            ])
+            # store a untouched copy of the timestamp in osrelease_stamp
+            grains['osrelease_stamp'] = uname_v
             if salt.utils.is_smartos_globalzone():
                 grains.update(_smartos_computenode_data())
         elif os.path.isfile('/etc/release'):
@@ -1433,10 +1448,10 @@ def os_data():
                 rel_data = fp_.read()
                 try:
                     release_re = re.compile(
-                        r'((?:Open)?Solaris|OpenIndiana) (Development)?'
-                        r'\s*(\d+ \d+\/\d+|oi_\S+|snv_\S+)?'
+                        r'((?:Open|Oracle )?Solaris|OpenIndiana|OmniOS) (Development)?'
+                        r'\s*(\d+\.?\d*|v\d+)\s?[A-Z]*\s?(r\d+|\d+\/\d+|oi_\S+|snv_\S+)?'
                     )
-                    osname, development, osrelease = \
+                    osname, development, osmajorrelease, osminorrelease = \
                         release_re.search(rel_data).groups()
                 except AttributeError:
                     # Set a blank osrelease grain and fallback to 'Solaris'
@@ -1446,8 +1461,26 @@ def os_data():
                 else:
                     if development is not None:
                         osname = ' '.join((osname, development))
+                    uname_v = os.uname()[3]
                     grains['os'] = grains['osfullname'] = osname
-                    grains['osrelease'] = osrelease
+                    if osname in ['Oracle Solaris'] and uname_v.startswith(osmajorrelease):
+                        # Oracla Solars 11 and up have minor version in uname
+                        grains['osrelease'] = uname_v
+                    elif osname in ['OmniOS']:
+                        # OmniOS
+                        osrelease = []
+                        osrelease.append(osmajorrelease[1:])
+                        osrelease.append(osminorrelease[1:])
+                        grains['osrelease'] = ".".join(osrelease)
+                        grains['osrelease_stamp'] = uname_v
+                    else:
+                        # Sun Solaris 10 and earlier/comparable
+                        osrelease = []
+                        osrelease.append(osmajorrelease)
+                        if osminorrelease:
+                            osrelease.append(osminorrelease)
+                        grains['osrelease'] = ".".join(osrelease)
+                        grains['osrelease_stamp'] = uname_v
 
         grains.update(_sunos_cpudata())
     elif grains['kernel'] == 'VMkernel':

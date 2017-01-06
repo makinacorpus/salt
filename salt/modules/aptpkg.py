@@ -269,8 +269,8 @@ def latest_version(*names, **kwargs):
             cmd.extend(repo)
         out = __salt__['cmd.run_all'](cmd,
                                       output_loglevel='trace',
-                                      env={'LC_ALL': 'C', 'LANG': 'C'},
-                                      python_shell=False)
+                                      python_shell=False,
+                                      env={'LC_ALL': 'C', 'LANG': 'C'})
         candidate = ''
         for line in out['stdout'].splitlines():
             if 'Candidate' in line:
@@ -389,7 +389,7 @@ def install(name=None,
             reinstall=False,
             **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -844,7 +844,7 @@ def autoremove(list_only=False, purge=False):
 
 def remove(name=None, pkgs=None, **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -888,7 +888,7 @@ def remove(name=None, pkgs=None, **kwargs):
 
 def purge(name=None, pkgs=None, **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -932,7 +932,7 @@ def purge(name=None, pkgs=None, **kwargs):
 
 def upgrade(refresh=True, dist_upgrade=False, **kwargs):
     '''
-    .. versionchanged:: 2015.8.12,2016.3.3,Carbon
+    .. versionchanged:: 2015.8.12,2016.3.3,2016.11.0
         On minions running systemd>=205, `systemd-run(1)`_ is now used to
         isolate commands which modify installed packages from the
         ``salt-minion`` daemon's control group. This is done to keep systemd
@@ -2069,9 +2069,9 @@ def file_dict(*packages):
 
     .. code-block:: bash
 
-        salt '*' pkg.file_list httpd
-        salt '*' pkg.file_list httpd postfix
-        salt '*' pkg.file_list
+        salt '*' pkg.file_dict httpd
+        salt '*' pkg.file_dict httpd postfix
+        salt '*' pkg.file_dict
     '''
     return __salt__['lowpkg.file_dict'](*packages)
 

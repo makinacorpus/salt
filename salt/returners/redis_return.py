@@ -67,7 +67,8 @@ __virtualname__ = 'redis'
 
 def __virtual__():
     if not HAS_REDIS:
-        return False
+        return False, 'Could not import redis returner; ' \
+                      'redis python client is not installed.'
     return __virtualname__
 
 
@@ -128,7 +129,7 @@ def save_load(jid, load, minions=None):
     serv.setex('load:{0}'.format(jid), json.dumps(load), _get_ttl())
 
 
-def save_minions(jid, minions):  # pylint: disable=unused-argument
+def save_minions(jid, minions, syndic_id=None):  # pylint: disable=unused-argument
     '''
     Included for API consistency
     '''
@@ -217,7 +218,8 @@ def clean_old_jobs():
         load_key = ret_key.replace('ret:', 'load:', 1)
         if load_key not in living_jids:
             to_remove.append(ret_key)
-    serv.delete(*to_remove)
+    if len(to_remove) != 0:
+        serv.delete(*to_remove)
 
 
 def prep_jid(nocache=False, passed_jid=None):  # pylint: disable=unused-argument

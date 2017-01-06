@@ -188,6 +188,21 @@ For example:
         - require:
           - salt: do_first_thing
 
+.. _beacons-and-reactors:
+
+Beacons and Reactors
+--------------------
+
+An event initiated by a beacon, when it arrives at the master will be wrapped
+inside a second event, such that the data object containing the beacon
+information will be ``data['data']``, rather than ``data``.
+
+For example, to access the ``id`` field of the beacon event in a reactor file,
+you will need to reference ``{{ data['data']['id'] }}`` rather than ``{{
+data['id'] }}`` as for events initiated directly on the event bus.
+
+See the :ref:`beacon documentation <beacon-example>` for examples.
+
 Fire an event
 =============
 
@@ -360,6 +375,13 @@ Use the ``expr_form`` argument to specify a matcher:
         - expr_form: compound
         - arg:
           - rm -rf /tmp/*
+
+.. note::
+    An easy mistake to make here is to use ``tgt_type`` instead of
+    ``expr_form``, since the job cache and events all refer to the targeting
+    method as ``tgt_type``. As of the Nitrogen release of Salt, ``expr_form``
+    will be deprecated in favor of using ``tgt_type``, to help with this
+    confusion.
 
 Any other parameters in the :py:meth:`LocalClient().cmd()
 <salt.client.LocalClient.cmd>` method can be specified as well.

@@ -220,8 +220,8 @@ Advanced Minion Targeting
 =========================
 
 In addition to globs, minions can be specified in top files a few other
-ways. Some common ones are :doc:`compound matches </topics/targeting/compound>`
-and :doc:`node groups </topics/targeting/nodegroups>`.
+ways. Some common ones are :ref:`compound matches <targeting-compound>`
+and :ref:`node groups <targeting-nodegroups>`.
 
 Below is a slightly more complex top file example, showing the different types
 of matches you can perform:
@@ -429,11 +429,6 @@ If the ``qa`` environment were specified, the :ref:`highstate
 Scenario 2 - No Environment Specified, :conf_minion:`top_file_merging_strategy` is "merge"
 ------------------------------------------------------------------------------------------
 
-.. versionchanged:: Carbon
-    The default merging strategy has been renamed from ``merge`` to
-    ``default`` to reflect the fact that SLS names from identical targets in
-    matching environments from multiple top files are not actually merged.
-
 In this scenario, assuming that the ``base`` environment's top file was
 evaluated first, the ``base1``, ``dev1``, and ``qa1`` states would be applied
 to all minions. If, for instance, the ``qa`` environment is not defined in
@@ -443,7 +438,7 @@ environment, no states from the ``qa`` environment would be applied.
 Scenario 3 - No Environment Specified, :conf_minion:`top_file_merging_strategy` is "same"
 -----------------------------------------------------------------------------------------
 
-.. versionchanged:: Carbon
+.. versionchanged:: 2016.11.0
     In prior versions, "same" did not quite work as described below (see
     here__). This has now been corrected. It was decided that changing
     something like top file handling in a point release had the potential to

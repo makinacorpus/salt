@@ -471,11 +471,30 @@ class TestCustomExtensions(TestCase):
             "foo": True,
             "bar": 42,
             "baz": [1, 2, 3],
-            "qux": 2.0
+            "qux": 2.0,
+            "spam": OrderedDict([
+                ('foo', OrderedDict([
+                    ('bar', 'baz'),
+                    ('qux', 42)
+                ])
+                )
+            ])
         }
         env = Environment(extensions=[SerializerExtension])
         rendered = env.from_string('{{ dataset|yaml }}').render(dataset=dataset)
         self.assertEqual(dataset, yaml.load(rendered))
+
+    def test_serialize_yaml_str(self):
+        dataset = "str value"
+        env = Environment(extensions=[SerializerExtension])
+        rendered = env.from_string('{{ dataset|yaml }}').render(dataset=dataset)
+        self.assertEqual(dataset, rendered)
+
+    def test_serialize_yaml_unicode(self):
+        dataset = u"str value"
+        env = Environment(extensions=[SerializerExtension])
+        rendered = env.from_string('{{ dataset|yaml }}').render(dataset=dataset)
+        self.assertEqual("!!python/unicode str value", rendered)
 
     def test_serialize_python(self):
         dataset = {
