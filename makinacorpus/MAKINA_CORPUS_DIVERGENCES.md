@@ -33,6 +33,13 @@ DIVERGENCES TO KEEP AT ALL COSTS:
 Backports
 -----------
 
+- Retry states:
+    - [856407ee27dff368d44fafdda9918de86f36ce47](https://github.com/saltstack/salt/commit/856407ee27dff368d44fafdda9918de86f36ce47)
+    - [6658c2f12b07254b16b67691e1876ed36df9be26](https://github.com/saltstack/salt/commit/6658c2f12b07254b16b67691e1876ed36df9be26)
+    - [aa7bfb422cfaff1b3fe92406393b3e8761c07724](https://github.com/saltstack/salt/commit/aa7bfb422cfaff1b3fe92406393b3e8761c07724)
+    - [2ad701784acd929d245a3e8d82139af73fb75194](https://github.com/saltstack/salt/commit/2ad701784acd929d245a3e8d82139af73fb75194)
+    - [8eeebf8112d22424f86263856d33195bfd9906cc](https://github.com/saltstack/salt/commit/8eeebf8112d22424f86263856d33195bfd9906cc)
+    - [e706f8e6060a952526753a267e4b7cf375c8ca17](https://github.com/saltstack/salt/commit/e706f8e6060a952526753a267e4b7cf375c8ca17)
 
 Merged
 -------
