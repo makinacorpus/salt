@@ -26,6 +26,15 @@ DIVERGENCES TO KEEP AT ALL COSTS:
 
 Backports
 -----------
+
+- Retry states:
+    - [856407ee27dff368d44fafdda9918de86f36ce47](https://github.com/saltstack/salt/commit/856407ee27dff368d44fafdda9918de86f36ce47)
+    - [6658c2f12b07254b16b67691e1876ed36df9be26](https://github.com/saltstack/salt/commit/6658c2f12b07254b16b67691e1876ed36df9be26)
+    - [aa7bfb422cfaff1b3fe92406393b3e8761c07724](https://github.com/saltstack/salt/commit/aa7bfb422cfaff1b3fe92406393b3e8761c07724)
+    - [2ad701784acd929d245a3e8d82139af73fb75194](https://github.com/saltstack/salt/commit/2ad701784acd929d245a3e8d82139af73fb75194)
+    - [8eeebf8112d22424f86263856d33195bfd9906cc](https://github.com/saltstack/salt/commit/8eeebf8112d22424f86263856d33195bfd9906cc)
+    - [e706f8e6060a952526753a267e4b7cf375c8ca17](https://github.com/saltstack/salt/commit/e706f8e6060a952526753a267e4b7cf375c8ca17)
+
 - [backport 1](https://github.com/makinacorpus/salt/commit/bed138bfa1e375ca65441c6821e398895d69d7aa)
 - [backport 2](https://github.com/makinacorpus/salt/commit/1d11453c466c62712f741735cbffec4d7cdb0665)
 - [backport 3](https://github.com/makinacorpus/salt/commit/0e0b8bedaed001b2359873c1be2d38e5376303df)
