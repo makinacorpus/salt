@@ -88,6 +88,7 @@ import salt.utils.jid
 import salt.pillar
 import salt.utils.args
 import salt.utils.event
+import salt.utils.network
 import salt.utils.minion
 import salt.utils.minions
 import salt.utils.schedule
@@ -132,7 +133,7 @@ log = logging.getLogger(__name__)
 # 6. Handle publications
 
 
-def resolve_dns(opts, fallback=True):
+def resolve_dns(opts, fallback=True, connect=True):
     '''
     Resolves the master_ip and master_uri options
     '''
@@ -149,13 +150,13 @@ def resolve_dns(opts, fallback=True):
             if opts['master'] == '':
                 raise SaltSystemExit
             ret['master_ip'] = \
-                    salt.utils.dns_check(opts['master'], True, opts['ipv6'])
+                    salt.utils.dns_check(opts['master'], opts['master_port'], True, opts['ipv6'], connect)
         except SaltClientError:
             if opts['retry_dns']:
                 while True:
                     import salt.log
-                    msg = ('Master hostname: \'{0}\' not found. Retrying in {1} '
-                           'seconds').format(opts['master'], opts['retry_dns'])
+                    msg = ('Master hostname: \'{0}\' not found or not responsive. '
+                           'Retrying in {1} seconds').format(opts['master'], opts['retry_dns'])
                     if salt.log.setup.is_console_configured():
                         log.error(msg)
                     else:
@@ -163,7 +164,7 @@ def resolve_dns(opts, fallback=True):
                     time.sleep(opts['retry_dns'])
                     try:
                         ret['master_ip'] = salt.utils.dns_check(
-                            opts['master'], True, opts['ipv6']
+                            opts['master'], opts['master_port'], True, opts['ipv6'], connect
                         )
                         break
                     except SaltClientError:
@@ -179,9 +180,11 @@ def resolve_dns(opts, fallback=True):
             if master == '':
                 master = unknown_str
             if opts.get('__role') == 'syndic':
-                err = 'Master address: \'{0}\' could not be resolved. Invalid or unresolveable address. Set \'syndic_master\' value in minion config.'.format(master)
+                err = 'Master address: \'{0}\' could not be resolved. Invalid or unresolveable address. ' \
+                      'Set \'syndic_master\' value in minion config.'.format(master)
             else:
-                err = 'Master address: \'{0}\' could not be resolved. Invalid or unresolveable address. Set \'master\' value in minion config.'.format(master)
+                err = 'Master address: \'{0}\' could not be resolved. Invalid or unresolveable address. ' \
+                      'Set \'master\' value in minion config.'.format(master)
             log.error(err)
             raise SaltSystemExit(code=42, msg=err)
     else:
@@ -199,7 +202,10 @@ def resolve_dns(opts, fallback=True):
 
 def prep_ip_port(opts):
     ret = {}
-    if opts['master_uri_format'] == 'ip_only':
+    # Use given master IP if "ip_only" is set or if master_ip is an ipv6 address without
+    # a port specified. The is_ipv6 check returns False if brackets are used in the IP
+    # definition such as master: '[::1]:1234'.
+    if opts['master_uri_format'] == 'ip_only' or salt.utils.network.is_ipv6(opts['master']):
         ret['master'] = opts['master']
     else:
         ip_port = opts['master'].rsplit(":", 1)
@@ -209,9 +215,13 @@ def prep_ip_port(opts):
         else:
             # e.g. master: localhost:1234
             # e.g. master: 127.0.0.1:1234
-            # e.g. master: ::1:1234
-            ret['master'] = ip_port[0]
-            ret['master_port'] = ip_port[1]
+            # e.g. master: [::1]:1234
+            # Strip off brackets for ipv6 support
+            ret['master'] = ip_port[0].strip('[]')
+
+            # Cast port back to an int! Otherwise a TypeError is thrown
+            # on some of the socket calls elsewhere in the minion and utils code.
+            ret['master_port'] = int(ip_port[1])
     return ret
 
 
@@ -1685,6 +1695,15 @@ class Minion(MinionBase):
             tagify([self.opts['id'], 'start'], 'minion'),
         )
 
+    def grains_refresh_manual(self):
+        '''
+        Perform a manual grains refresh
+        '''
+        self.opts['grains'] = salt.loader.grains(
+            self.opts,
+            force_refresh=True,
+            proxy=getattr(self, 'proxy', None))
+
     def module_refresh(self, force_refresh=False, notify=False):
         '''
         Refresh the functions and returners.
@@ -1854,9 +1873,12 @@ class Minion(MinionBase):
         elif package.startswith('manage_beacons'):
             self.manage_beacons(tag, data)
         elif package.startswith('grains_refresh'):
+            if package == 'grains_refresh_manual':
+                self.grains_refresh_manual()
             if self.grains_cache != self.opts['grains']:
-                self.pillar_refresh(force_refresh=True)
                 self.grains_cache = self.opts['grains']
+                if package != 'grains_refresh_manual':
+                    self.pillar_refresh(force_refresh=True)
         elif package.startswith('environ_setenv'):
             self.environ_setenv(tag, data)
         elif package.startswith('_minion_mine'):
