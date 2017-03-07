@@ -135,6 +135,7 @@ class MockState(object):
                 'pillar': {}}
 
         def __init__(self, opts, pillar=None, *args, **kwargs):
+            self.building_highstate = {}
             self.state = MockState.State(opts,
                                          pillar=pillar)
 
