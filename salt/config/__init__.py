@@ -932,7 +932,7 @@ VALID_OPTS = {
     # http://docs.python.org/2/library/ssl.html#ssl.wrap_socket
     # Note: to set enum arguments values like `cert_reqs` and `ssl_version` use constant names
     # without ssl module prefix: `CERT_REQUIRED` or `PROTOCOL_SSLv23`.
-    'ssl': (dict, type(None)),
+    'ssl': (dict, bool, type(None)),
 
     # django auth
     'django_auth_path': str,
@@ -1062,7 +1062,7 @@ DEFAULT_MINION_OPTS = {
     'mine_interval': 60,
     'ipc_mode': _DFLT_IPC_MODE,
     'ipc_write_buffer': _DFLT_IPC_WBUFFER,
-    'ipv6': False,
+    'ipv6': None,
     'file_buffer_size': 262144,
     'tcp_pub_port': 4510,
     'tcp_pull_port': 4511,
@@ -3106,7 +3106,11 @@ def _update_ssl_config(opts):
     '''
     Resolves string names to integer constant in ssl configuration.
     '''
-    if opts['ssl'] is None:
+    if opts['ssl'] in (None, False):
+        opts['ssl'] = None
+        return
+    if opts['ssl'] is True:
+        opts['ssl'] = {}
         return
     import ssl
     for key, prefix in (('cert_reqs', 'CERT_'),

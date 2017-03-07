@@ -390,20 +390,21 @@ class Pillar(object):
         # Gather initial top files
         try:
             if self.opts['pillarenv']:
-                tops[self.opts['pillarenv']] = [
-                        compile_template(
-                            self.client.cache_file(
-                                self.opts['state_top'],
-                                self.opts['pillarenv']
-                                ),
-                            self.rend,
-                            self.opts['renderer'],
-                            self.opts['renderer_blacklist'],
-                            self.opts['renderer_whitelist'],
-                            self.opts['pillarenv'],
-                            _pillar_rend=True,
-                            )
-                        ]
+                top = self.client.cache_file(
+                    self.opts['state_top'], self.opts['pillarenv'])
+
+                if top:
+                    tops[self.opts['pillarenv']] = [
+                            compile_template(
+                                top,
+                                self.rend,
+                                self.opts['renderer'],
+                                self.opts['renderer_blacklist'],
+                                self.opts['renderer_whitelist'],
+                                self.opts['pillarenv'],
+                                _pillar_rend=True,
+                                )
+                            ]
             else:
                 for saltenv in self._get_envs():
                     if self.opts.get('pillar_source_merging_strategy', None) == "none":
@@ -823,7 +824,9 @@ class Pillar(object):
         top, top_errors = self.get_top()
         if ext:
             if self.opts.get('ext_pillar_first', False):
-                self.opts['pillar'], errors = self.ext_pillar({}, pillar_dirs)
+                self.opts['pillar'], errors = self.ext_pillar(
+                    self.pillar_override,
+                    pillar_dirs)
                 self.rend = salt.loader.render(self.opts, self.functions)
                 matches = self.top_matches(top)
                 pillar, errors = self.render_pillar(matches, errors=errors)

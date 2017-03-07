@@ -200,13 +200,24 @@ Functions
       <salt.modules.dockerng.connect_container_to_network>`
     - :py:func:`dockerng.disconnect_container_from_network
       <salt.modules.dockerng.disconnect_container_from_network>`
-
+- Salt Functions and States Execution
+    - :py:func:`dockerng.call <salt.modules.dockerng.call>`
+    - :py:func:`dockerng.sls <salt.modules.dockerng.sls>`
+    - :py:func:`dockerng.sls_build <salt.modules.dockerng.sls_build>`
 
 
 .. _docker-execution-driver:
 
 Executing Commands Within a Running Container
 ---------------------------------------------
+
+.. note::
+    With the release of Docker 1.13.1, the Execution Driver has been removed.
+    Starting in versions 2016.3.6, 2016.11.4, and Nitrogen, Salt defaults to
+    using ``docker exec`` to run commands in containers, however for older Salt
+    releases it will be necessary to set the ``docker.exec_driver`` config
+    option to either ``docker-exec`` or ``nsenter`` for Docker versions 1.13.1
+    and newer.
 
 Multiple methods exist for executing commands within Docker containers:
 
@@ -269,7 +280,6 @@ import distutils.version  # pylint: disable=import-error,no-name-in-module,unuse
 import fnmatch
 import functools
 import gzip
-import inspect as inspect_module
 import io
 import json
 import logging
@@ -289,6 +299,7 @@ import subprocess
 from salt.exceptions import CommandExecutionError, SaltInvocationError
 import salt.ext.six as six
 from salt.ext.six.moves import map  # pylint: disable=import-error,redefined-builtin
+from salt.utils.args import get_function_argspec as _argspec
 import salt.utils
 import salt.utils.decorators
 import salt.utils.thin
@@ -302,10 +313,21 @@ import salt.client.ssh.state
 # pylint: disable=import-error
 try:
     import docker
-    import docker.utils
     HAS_DOCKER_PY = True
 except ImportError:
     HAS_DOCKER_PY = False
+
+# These next two imports are only necessary to have access to the needed
+# functions so that we can get argspecs for the container config, host config,
+# and networking config (see the get_client_args() function).
+try:
+    import docker.types
+except ImportError:
+    pass
+try:
+    import docker.utils
+except ImportError:
+    pass
 
 try:
     if six.PY2:
@@ -565,6 +587,12 @@ VALID_CREATE_OPTS = {
             'Config': {},
         }
     },
+    'ulimits': {
+        'path': 'HostConfig:Ulimits',
+        'min_docker': (1, 6, 0),
+        'min_docker_py': (1, 2, 0),
+        'default': [],
+    },
 }
 
 
@@ -822,10 +850,10 @@ def _get_client(timeout=None):
                     'Docker machine {0} failed: {1}'.format(docker_machine, exc))
 
         try:
-            __context__['docker.client'] = docker.Client(**client_kwargs)
-        except AttributeError:
             # docker-py 2.0 renamed this client attribute
             __context__['docker.client'] = docker.APIClient(**client_kwargs)
+        except AttributeError:
+            __context__['docker.client'] = docker.Client(**client_kwargs)
 
     # Set a new timeout if one was passed
     if timeout is not None and __context__['docker.client'].timeout != timeout:
@@ -886,10 +914,12 @@ def _get_exec_driver():
             __context__[contextkey] = from_config
             return from_config
 
-        # For old versions of docker, lxc was the only supported driver.
-        # This is a sane default.
-        driver = info().get('ExecutionDriver', 'lxc-')
-        if driver.startswith('lxc-'):
+        # The execution driver was removed in Docker 1.13.1, docker-exec is now
+        # the default.
+        driver = info().get('ExecutionDriver', 'docker-exec')
+        if driver == 'docker-exec':
+            __context__[contextkey] = driver
+        elif driver.startswith('lxc-'):
             __context__[contextkey] = 'lxc-attach'
         elif driver.startswith('native-') and HAS_NSENTER:
             __context__[contextkey] = 'nsenter'
@@ -1896,6 +1926,44 @@ def _validate_input(kwargs,
                     kwargs['labels'] = new_labels
             else:
                 kwargs['labels'] = salt.utils.repack_dictlist(kwargs['labels'])
+
+    def _valid_ulimits():  # pylint: disable=unused-variable
+        '''
+        Must be a string or list of strings with bind mount information
+        '''
+        if kwargs.get('ulimits') is None:
+            # No need to validate
+            return
+        err = (
+            'Invalid ulimits configuration. See the documentation for proper '
+            'usage.'
+        )
+        try:
+            _valid_dictlist('ulimits')
+            # If this was successful then assume the correct API value was
+            # passed on on the CLI and do not proceed with validation.
+            return
+        except SaltInvocationError:
+            pass
+        try:
+            _valid_stringlist('ulimits')
+        except SaltInvocationError:
+            raise SaltInvocationError(err)
+
+        new_ulimits = []
+        for ulimit in kwargs['ulimits']:
+            ulimit_name, comps = ulimit.strip().split('=', 1)
+            try:
+                comps = [int(x) for x in comps.split(':', 1)]
+            except ValueError:
+                raise SaltInvocationError(err)
+            if len(comps) == 1:
+                comps *= 2
+            soft_limit, hard_limit = comps
+            new_ulimits.append({'Name': ulimit_name,
+                                'Soft': soft_limit,
+                                'Hard': hard_limit})
+        kwargs['ulimits'] = new_ulimits
 
     # And now, the actual logic to perform the validation
     if 'docker.docker_version' not in __context__:
@@ -3138,7 +3206,7 @@ def create(image,
     # https://docs.docker.com/engine/reference/api/docker_remote_api_v1.15/#create-a-container
     if salt.utils.version_cmp(version()['ApiVersion'], '1.15') > 0:
         client = __context__['docker.client']
-        host_config_args = inspect_module.getargspec(docker.utils.create_host_config).args
+        host_config_args = get_client_args()['host_config']
         create_kwargs['host_config'] = client.create_host_config(
             **dict((arg, create_kwargs.pop(arg, None)) for arg in host_config_args if arg != 'version')
         )
@@ -5726,21 +5794,24 @@ def _gather_pillar(pillarenv, pillar_override, **grains):
 
 def call(name, function, *args, **kwargs):
     '''
-    Executes a salt function inside a container
+    Executes a Salt function inside a running container
+
+    .. versionadded:: 2016.11.0
+
+    The container does not need to have Salt installed, but Python is required.
+
+    name
+        Container name or ID
+
+    function
+        Salt execution module function
 
     CLI Example:
 
     .. code-block:: bash
 
-        salt myminion dockerng.call test.ping
-
-        salt myminion test.arg arg1 arg2 key1=val1
-
-    The container does not need to have Salt installed, but Python
-    is required.
-
-    .. versionadded:: 2016.11.0
-
+        salt myminion dockerng.call compassionate_mirzakhani test.ping
+        salt myminion dockerng.call compassionate_mirzakhani test.arg arg1 arg2 key1=val1
     '''
     # where to put the salt-thin
     thin_dest_path = _generate_tmp_path()
@@ -5795,22 +5866,29 @@ def call(name, function, *args, **kwargs):
 
 def sls(name, mods=None, saltenv='base', **kwargs):
     '''
-    Apply the highstate defined by the specified modules.
+    Apply the states defined by the specified SLS modules to the running
+    container
 
-    For example, if your master defines the states ``web`` and ``rails``, you
-    can apply them to a container:
-    states by doing:
+    .. versionadded:: 2016.11.0
+
+    The container does not need to have Salt installed, but Python is required.
+
+    name
+        Container name or ID
+
+    mods : None
+        A string containing comma-separated list of SLS with defined states to
+        apply to the container.
+
+    saltenv : base
+        Specify the environment from which to retrieve the SLS indicated by the
+        `mods` parameter.
 
     CLI Example:
 
     .. code-block:: bash
 
         salt myminion dockerng.sls compassionate_mirzakhani mods=rails,web
-
-    The container does not need to have Salt installed, but Python
-    is required.
-
-    .. versionadded:: 2016.11.0
     '''
     mods = [item.strip() for item in mods.split(',')] if mods else []
 
@@ -5867,24 +5945,32 @@ def sls(name, mods=None, saltenv='base', **kwargs):
 def sls_build(name, base='opensuse/python', mods=None, saltenv='base',
               **kwargs):
     '''
-    Build a docker image using the specified sls modules and base image.
+    Build a Docker image using the specified SLS modules on top of base image
 
-    For example, if your master defines the states ``web`` and ``rails``, you
-    can build a docker image inside myminion that results of applying those
-    states by doing:
+    .. versionadded:: 2016.11.0
+
+    The base image does not need to have Salt installed, but Python is required.
+
+    name
+        Image name to be built and committed
+
+    base : opensuse/python
+        Name or ID of the base image
+
+    mods : None
+        A string containing comma-separated list of SLS with defined states to
+        apply to the base image.
+
+    saltenv : base
+        Specify the environment from which to retrieve the SLS indicated by the
+        `mods` parameter.
 
     CLI Example:
 
     .. code-block:: bash
 
         salt myminion dockerng.sls_build imgname base=mybase mods=rails,web
-
-    The base image does not need to have Salt installed, but Python
-    is required.
-
-    .. versionadded:: 2016.11.0
     '''
-
     create_kwargs = salt.utils.clean_kwargs(**copy.deepcopy(kwargs))
     for key in ('image', 'name', 'cmd', 'interactive', 'tty'):
         try:
@@ -5911,3 +5997,76 @@ def sls_build(name, base='opensuse/python', mods=None, saltenv='base',
         __salt__['dockerng.stop'](id_)
 
     return __salt__['dockerng.commit'](id_, name)
+
+
+def get_client_args():
+    '''
+    .. versionadded:: 2016.3.6,2016.11.4,Nitrogen
+
+    Returns the args for docker-py's `low-level API`_, organized by container
+    config, host config, and networking config.
+
+    .. _`low-level API`: http://docker-py.readthedocs.io/en/stable/api.html
+        salt myminion docker.get_client_args
+    '''
+    try:
+        config_args = _argspec(docker.types.ContainerConfig.__init__).args
+    except AttributeError:
+        try:
+            config_args = _argspec(docker.utils.create_container_config).args
+        except AttributeError:
+            raise CommandExecutionError(
+                'Failed to get create_container_config argspec'
+            )
+
+    try:
+        host_config_args = \
+            _argspec(docker.types.HostConfig.__init__).args
+    except AttributeError:
+        try:
+            host_config_args = _argspec(docker.utils.create_host_config).args
+        except AttributeError:
+            raise CommandExecutionError(
+                'Failed to get create_host_config argspec'
+            )
+
+    try:
+        endpoint_config_args = \
+            _argspec(docker.types.EndpointConfig.__init__).args
+    except AttributeError:
+        try:
+            endpoint_config_args = \
+                _argspec(docker.utils.utils.create_endpoint_config).args
+        except AttributeError:
+            try:
+                endpoint_config_args = \
+                    _argspec(docker.utils.create_endpoint_config).args
+            except AttributeError:
+                raise CommandExecutionError(
+                    'Failed to get create_endpoint_config argspec'
+                )
+
+    for arglist in (config_args, host_config_args, endpoint_config_args):
+        try:
+            # The API version is passed automagically by the API code that
+            # imports these classes/functions and is not an arg that we will be
+            # passing, so remove it if present.
+            arglist.remove('version')
+        except ValueError:
+            pass
+
+    # Remove any args in host or networking config from the main config dict.
+    # This keeps us from accidentally allowing args that have been moved from
+    # the container config to the host config (but are still accepted by
+    # create_container_config so warnings can be issued).
+    for arglist in (host_config_args, endpoint_config_args):
+        for item in arglist:
+            try:
+                config_args.remove(item)
+            except ValueError:
+                # Arg is not in config_args
+                pass
+
+    return {'config': config_args,
+            'host_config': host_config_args,
+            'networking_config': endpoint_config_args}
