@@ -54,6 +54,7 @@ log = logging.getLogger(__name__)
 STATE_REQUISITE_KEYWORDS = frozenset([
     'onchanges',
     'onfail',
+    'onfail_stop',
     'prereq',
     'prerequired',
     'watch',
@@ -1343,6 +1344,7 @@ class State(object):
                     'require',
                     'watch',
                     'onfail',
+                    'onfail_stop',
                     'onchanges',
                     ]))
         extend = {}
