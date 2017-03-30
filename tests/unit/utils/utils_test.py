@@ -455,6 +455,34 @@ class UtilsTestCase(TestCase):
                 utils.check_state_result(data),
                 msg='{0} failed'.format(test))
         test_invalid_true_ht_states = {
+            'test_onfail_simple2': (
+                OrderedDict([
+                    ('host1',
+                     OrderedDict([
+                         ('test_vstate0', {'result':  False}),
+                         ('test_vstate1', {'result': True}),
+                     ])),
+                ]),
+                {
+                    'test_vstate0': {
+                        '__env__': 'base',
+                        '__sls__': u'a',
+                        'cmd': [OrderedDict([('name', '/bin/true')]),
+                                'run',
+                                {'order': 10002}]},
+                    'test_vstate1': {
+                        '__env__': 'base',
+                        '__sls__': u'a',
+                        'cmd': [OrderedDict([('name', '/bin/true')]),
+                                OrderedDict([
+                                    ('onfail_stop', True),
+                                    ('onfail',
+                                     [OrderedDict([('cmd', 'test_vstate0')])])
+                                ]),
+                                'run',
+                                {'order': 10004}]},
+                }
+            ),
             'test_onfail_integ2': (
                 OrderedDict([
                     ('host1',
@@ -482,6 +510,7 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_ivstate0')])])
                                 ]),
@@ -516,6 +545,7 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_ivstate0')])])
                                 ]),
@@ -550,6 +580,18 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
+                                    ('onfail',
+                                     [OrderedDict([('cmd', 'test_ivstate0')])])
+                                ]),
+                                'run',
+                                {'order': 10004}]},
+                    'test_ivstate2': {
+                        '__env__': 'base',
+                        '__sls__': u'a',
+                        'cmd': [OrderedDict([('name', '/bin/true')]),
+                                OrderedDict([
+                                    ('onfail_stop', True),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_ivstate0')])])
                                 ]),
@@ -612,6 +654,7 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_ivstate0')])])
                                 ]),
@@ -646,6 +689,7 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_ivstate0')])])
                                 ]),
@@ -673,6 +717,7 @@ class UtilsTestCase(TestCase):
                         '__sls__': u'a',
                         'cmd': [OrderedDict([('name', '/bin/true')]),
                                 OrderedDict([
+                                    ('onfail_stop', False),
                                     ('onfail',
                                      [OrderedDict([('cmd', 'test_vstate0')])])
                                 ]),
