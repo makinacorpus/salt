@@ -133,7 +133,7 @@ log = logging.getLogger(__name__)
 # 6. Handle publications
 
 
-def resolve_dns(opts, fallback=True, connect=True):
+def resolve_dns(opts, fallback=True):
     '''
     Resolves the master_ip and master_uri options
     '''
@@ -150,7 +150,7 @@ def resolve_dns(opts, fallback=True, connect=True):
             if opts['master'] == '':
                 raise SaltSystemExit
             ret['master_ip'] = \
-                    salt.utils.dns_check(opts['master'], opts['master_port'], True, opts['ipv6'], connect)
+                    salt.utils.dns_check(opts['master'], opts['master_port'], True, opts['ipv6'])
         except SaltClientError:
             if opts['retry_dns']:
                 while True:
@@ -164,7 +164,7 @@ def resolve_dns(opts, fallback=True, connect=True):
                     time.sleep(opts['retry_dns'])
                     try:
                         ret['master_ip'] = salt.utils.dns_check(
-                            opts['master'], opts['master_port'], True, opts['ipv6'], connect
+                            opts['master'], opts['master_port'], True, opts['ipv6']
                         )
                         break
                     except SaltClientError:
@@ -1695,15 +1695,6 @@ class Minion(MinionBase):
             tagify([self.opts['id'], 'start'], 'minion'),
         )
 
-    def grains_refresh_manual(self):
-        '''
-        Perform a manual grains refresh
-        '''
-        self.opts['grains'] = salt.loader.grains(
-            self.opts,
-            force_refresh=True,
-            proxy=getattr(self, 'proxy', None))
-
     def module_refresh(self, force_refresh=False, notify=False):
         '''
         Refresh the functions and returners.
@@ -1873,12 +1864,9 @@ class Minion(MinionBase):
         elif package.startswith('manage_beacons'):
             self.manage_beacons(tag, data)
         elif package.startswith('grains_refresh'):
-            if package == 'grains_refresh_manual':
-                self.grains_refresh_manual()
             if self.grains_cache != self.opts['grains']:
                 self.grains_cache = self.opts['grains']
-                if package != 'grains_refresh_manual':
-                    self.pillar_refresh(force_refresh=True)
+                self.pillar_refresh(force_refresh=True)
         elif package.startswith('environ_setenv'):
             self.environ_setenv(tag, data)
         elif package.startswith('_minion_mine'):

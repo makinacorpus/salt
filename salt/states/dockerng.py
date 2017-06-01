@@ -1490,6 +1490,8 @@ def running(name,
         the format ``<ulimit_name>:<soft_limit>:<hard_limit>``, with the hard
         limit being optional.
 
+        .. versionadded:: 2016.3.6,2016.11.4,Nitrogen
+
         .. code-block:: yaml
 
             foo:
@@ -2383,7 +2385,7 @@ def volume_absent(name, driver=None):
     '''
     Ensure that a volume is absent.
 
-    .. versionadded:: 2015.8.4
+    .. versionadded:: 2015.8.4,
 
     name
         Name of the volume
@@ -2425,6 +2427,9 @@ def mod_watch(name, sfun=None, **kwargs):
             watch_kwargs['send_signal'] = True
             watch_kwargs['force'] = False
         return running(name, **watch_kwargs)
+
+    if sfun == 'stopped':
+        return stopped(name, **salt.utils.clean_kwargs(**kwargs))
 
     if sfun == 'image_present':
         # Force image to be updated

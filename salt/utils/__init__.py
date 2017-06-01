@@ -18,6 +18,7 @@ import json
 import logging
 import numbers
 import os
+import posixpath
 import pprint
 import random
 import re
@@ -716,11 +717,12 @@ def ip_bracket(addr):
     return addr
 
 
-def dns_check(addr, port, safe=False, ipv6=None, connect=True):
+def dns_check(addr, port, safe=False, ipv6=None):
     '''
     Return the ip resolved by dns, but do not exit on failure, only raise an
     exception. Obeys system preference for IPv4/6 address resolution.
-    Tries to connect to the address before considering it useful.
+    Tries to connect to the address before considering it useful. If no address
+    can be reached, the first one resolved is used as a fallback.
     '''
     error = False
     try:
@@ -734,18 +736,21 @@ def dns_check(addr, port, safe=False, ipv6=None, connect=True):
             error = True
         else:
             resolved = False
+            candidates = []
             for h in hostnames:
+                # It's an IP address, just return it
+                if h[4][0] == addr:
+                    resolved = addr
+                    break
+
                 if h[0] == socket.AF_INET and ipv6 is True:
                     continue
                 if h[0] == socket.AF_INET6 and ipv6 is False:
                     continue
-                if h[0] == socket.AF_INET6 and connect is False and ipv6 is None:
-                    continue
 
                 candidate_addr = ip_bracket(h[4][0])
-
-                if not connect:
-                    resolved = candidate_addr
+                if h[0] != socket.AF_INET6 or ipv6 is not None:
+                    candidates.append(candidate_addr)
 
                 s = socket.socket(h[0], socket.SOCK_STREAM)
                 try:
@@ -757,7 +762,10 @@ def dns_check(addr, port, safe=False, ipv6=None, connect=True):
                 except socket.error:
                     pass
             if not resolved:
-                error = True
+                if len(candidates) > 0:
+                    resolved = candidates[0]
+                else:
+                    error = True
     except TypeError:
         err = ('Attempt to resolve address \'{0}\' failed. Invalid or unresolveable address').format(addr)
         raise SaltSystemExit(code=42, msg=err)
@@ -863,16 +871,26 @@ def backup_minion(path, bkroot):
         os.chmod(bkpath, fstat.st_mode)
 
 
-def path_join(*parts):
+def path_join(*parts, **kwargs):
     '''
     This functions tries to solve some issues when joining multiple absolute
     paths on both *nix and windows platforms.
 
     See tests/unit/utils/path_join_test.py for some examples on what's being
     talked about here.
+
+    The "use_posixpath" kwarg can be be used to force joining using poxixpath,
+    which is useful for Salt fileserver paths on Windows masters.
     '''
+    kwargs = salt.utils.clean_kwargs(**kwargs)
+    use_posixpath = kwargs.pop('use_posixpath', False)
+    if kwargs:
+        invalid_kwargs(kwargs)
+
+    pathlib = posixpath if use_posixpath else os.path
+
     # Normalize path converting any os.sep as needed
-    parts = [os.path.normpath(p) for p in parts]
+    parts = [pathlib.normpath(p) for p in parts]
 
     try:
         root = parts.pop(0)
@@ -883,14 +901,9 @@ def path_join(*parts):
     if not parts:
         ret = root
     else:
-        if is_windows():
-            if len(root) == 1:
-                root += ':'
-            root = root.rstrip(os.sep) + os.sep
-
         stripped = [p.lstrip(os.sep) for p in parts]
         try:
-            ret = os.path.join(root, *stripped)
+            ret = pathlib.join(root, *stripped)
         except UnicodeDecodeError:
             # This is probably Python 2 and one of the parts contains unicode
             # characters in a bytestring. First try to decode to the system
@@ -900,13 +913,13 @@ def path_join(*parts):
             except NameError:
                 enc = sys.stdin.encoding or sys.getdefaultencoding()
             try:
-                ret = os.path.join(root.decode(enc),
+                ret = pathlib.join(root.decode(enc),
                                    *[x.decode(enc) for x in stripped])
             except UnicodeDecodeError:
                 # Last resort, try UTF-8
-                ret = os.path.join(root.decode('UTF-8'),
+                ret = pathlib.join(root.decode('UTF-8'),
                                    *[x.decode('UTF-8') for x in stripped])
-    return os.path.normpath(ret)
+    return pathlib.normpath(ret)
 
 
 def pem_finger(path=None, key=None, sum_type='sha256'):

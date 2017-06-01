@@ -868,6 +868,12 @@ VALID_OPTS = {
 
     # Default returners minion should use. List or comma-delimited string
     'return': (str, list),
+
+    # Permit or deny allowing minions to request revoke of its own key
+    'allow_minion_key_revoke': bool,
+
+    # File chunk size for salt-cp
+    'salt_cp_chunk_size': int,
 }
 
 # default configurations
@@ -883,6 +889,7 @@ DEFAULT_MINION_OPTS = {
     'master_failback': False,
     'master_failback_interval': 0,
     'verify_master_pubkey_sign': False,
+    'sign_pub_messages': False,
     'always_verify_signature': False,
     'master_sign_key_name': 'master_sign',
     'syndic_finger': '',
@@ -1088,6 +1095,16 @@ DEFAULT_MINION_OPTS = {
     'http_request_timeout': 1 * 60 * 60.0,  # 1 hour
     'http_max_body': 100 * 1024 * 1024 * 1024,  # 100GB
     'event_match_type': 'startswith',
+    'minion_restart_command': [],
+    'pub_ret': True,
+    'proxy_host': '',
+    'proxy_username': '',
+    'proxy_password': '',
+    'proxy_port': 0,
+    'minion_jid_queue_hwm': 100,
+    'ssl': None,
+    'cache': 'localfs',
+    'salt_cp_chunk_size': 65536,
 }
 
 DEFAULT_MASTER_OPTS = {
@@ -1292,7 +1309,7 @@ DEFAULT_MASTER_OPTS = {
     'tcp_keepalive_idle': 300,
     'tcp_keepalive_cnt': -1,
     'tcp_keepalive_intvl': -1,
-    'sign_pub_messages': False,
+    'sign_pub_messages': True,
     'keysize': 2048,
     'transport': 'zeromq',
     'gather_job_timeout': 10,
@@ -1345,6 +1362,8 @@ DEFAULT_MASTER_OPTS = {
     'python2_bin': 'python2',
     'python3_bin': 'python3',
     'thin_extra_mods': '',
+    'allow_minion_key_revoke': True,
+    'salt_cp_chunk_size': 98304,
 }
 
 
@@ -1355,6 +1374,7 @@ DEFAULT_MASTER_OPTS = {
 DEFAULT_PROXY_MINION_OPTS = {
     'conf_file': os.path.join(salt.syspaths.CONFIG_DIR, 'proxy'),
     'log_file': os.path.join(salt.syspaths.LOGS_DIR, 'proxy'),
+    'sign_pub_messages': False,
     'add_proxymodule_to_opts': False,
     'proxy_merge_grains_in_module': False,
     'append_minionid_config_dirs': ['cachedir'],
@@ -1558,6 +1578,29 @@ def _validate_opts(opts):
     if errors:
         return False
     return True
+
+
+def _validate_ssh_minion_opts(opts):
+    '''
+    Ensure we're not using any invalid ssh_minion_opts. We want to make sure
+    that the ssh_minion_opts does not override any pillar or fileserver options
+    inherited from the master config. To add other items, modify the if
+    statement in the for loop below.
+    '''
+    ssh_minion_opts = opts.get('ssh_minion_opts', {})
+    if not isinstance(ssh_minion_opts, dict):
+        log.error('Invalidly-formatted ssh_minion_opts')
+        opts.pop('ssh_minion_opts')
+
+    for opt_name in list(ssh_minion_opts):
+        if re.match('^[a-z0-9]+fs_', opt_name, flags=re.IGNORECASE) \
+                or 'pillar' in opt_name \
+                or opt_name in ('fileserver_backend',):
+            log.warning(
+                '\'%s\' is not a valid ssh_minion_opts parameter, ignoring',
+                opt_name
+            )
+            ssh_minion_opts.pop(opt_name)
 
 
 def _append_domain(opts):
@@ -3108,6 +3151,7 @@ def master_config(path, env_var='SALT_MASTER_CONFIG', defaults=None, exit_on_con
     overrides.update(include_config(include, path, verbose=True),
                      exit_on_config_errors=exit_on_config_errors)
     opts = apply_master_config(overrides, defaults)
+    _validate_ssh_minion_opts(opts)
     _validate_opts(opts)
     # If 'nodegroups:' is uncommented in the master config file, and there are
     # no nodegroups defined, opts['nodegroups'] will be None. Fix this by

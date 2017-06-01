@@ -454,10 +454,11 @@ def latest_version(*names, **kwargs):
     def _check_cur(pkg):
         if pkg.name in cur_pkgs:
             for installed_version in cur_pkgs[pkg.name]:
-                # If any installed version is greater than the one found by
-                # yum/dnf list available, then it is not an upgrade.
+                # If any installed version is greater than (or equal to) the
+                # one found by yum/dnf list available, then it is not an
+                # upgrade.
                 if salt.utils.compare_versions(ver1=installed_version,
-                                               oper='>',
+                                               oper='>=',
                                                ver2=pkg.version,
                                                cmp_func=version_cmp):
                     return False
@@ -913,6 +914,7 @@ def install(name=None,
             skip_verify=False,
             pkgs=None,
             sources=None,
+            downloadonly=False,
             reinstall=False,
             normalize=True,
             **kwargs):
@@ -969,6 +971,9 @@ def install(name=None,
 
     skip_verify
         Skip the GPG verification check (e.g., ``--nogpgcheck``)
+
+    downloadonly
+        Only download the packages, do not install.
 
     version
         Install a specific version of the package, e.g. 1.2.3-4.el5. Ignored
@@ -1200,6 +1205,8 @@ def install(name=None,
                 cmd.extend(args)
         if skip_verify:
             cmd.append('--nogpgcheck')
+        if downloadonly:
+            cmd.append('--downloadonly')
 
     errors = []
 
