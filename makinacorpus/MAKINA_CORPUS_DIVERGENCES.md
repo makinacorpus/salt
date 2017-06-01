@@ -5,6 +5,12 @@ MakinaCorpus Saltstack fork
   This drastically improve git clones as the repo is for now < 50 mo (~160mo for saltstack's one)
 - We contribute a lot to salt, but pullrequests will be done via other forks to avoid growing this repo size
 
+
+In progress
+------------
+- [Make print_cli resilient on slow systems](https://github.com/makinacorpus/salt/commit/de5a19bac8ffeecf97e5242ca0b46bbbf2485cd0)
+
+
 DIVERGENCES TO KEEP AT ALL COSTS:
 ----------------------------------
 - [MC: lower virtual noice / 0877a28873bda58af9e391aac70b4dcd0a4f5f77](https://github.com/makinacorpus/salt/commit/0877a28873bda58af9e391aac70b4dcd0a4f5f77)
