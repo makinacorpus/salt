@@ -57,6 +57,7 @@ from salt.exceptions import (CommandExecutionError,
                              SaltInvocationError,
                              SaltRenderError)
 import salt.utils
+import salt.utils.pkg
 import salt.syspaths
 from salt.exceptions import MinionError
 
@@ -510,6 +511,8 @@ def refresh_db(**kwargs):
         salt '*' pkg.refresh_db
         salt '*' pkg.refresh_db saltenv=base
     '''
+    # Remove rtag file to keep multiple refreshes from happening in pkg states
+    salt.utils.pkg.clear_rtag(__opts__)
     saltenv = kwargs.pop('saltenv', 'base')
     verbose = salt.utils.is_true(kwargs.pop('verbose', False))
     failhard = salt.utils.is_true(kwargs.pop('failhard', True))
@@ -837,6 +840,23 @@ def _get_source_sum(source_hash, file_path, saltenv):
     return ret
 
 
+def _get_msiexec(use_msiexec):
+    '''
+    Return if msiexec.exe will be used and the command to invoke it.
+    '''
+    if use_msiexec is False:
+        return False, ''
+    if isinstance(use_msiexec, six.string_types):
+        if os.path.isfile(use_msiexec):
+            return True, use_msiexec
+        else:
+            log.warning(("msiexec path '{0}' not found. Using system registered"
+                         " msiexec instead").format(use_msiexec))
+            use_msiexec = True
+    if use_msiexec is True:
+        return True, 'msiexec'
+
+
 def install(name=None, refresh=False, pkgs=None, **kwargs):
     r'''
     Install the passed package(s) on the system using winrepo
@@ -1137,13 +1157,16 @@ def install(name=None, refresh=False, pkgs=None, **kwargs):
                 options.get('extra_install_flags', '')
             )
 
+        #Compute msiexec string
+        use_msiexec, msiexec = _get_msiexec(pkginfo[version_num].get('msiexec', False))
+
         # Install the software
         # Check Use Scheduler Option
         if pkginfo[version_num].get('use_scheduler', False):
 
             # Build Scheduled Task Parameters
-            if pkginfo[version_num].get('msiexec'):
-                cmd = 'msiexec.exe'
+            if use_msiexec:
+                cmd = msiexec
                 arguments = ['/i', cached_pkg]
                 if pkginfo['version_num'].get('allusers', True):
                     arguments.append('ALLUSERS="1"')
@@ -1173,8 +1196,8 @@ def install(name=None, refresh=False, pkgs=None, **kwargs):
         else:
             # Build the install command
             cmd = []
-            if pkginfo[version_num].get('msiexec'):
-                cmd.extend(['msiexec', '/i', cached_pkg])
+            if use_msiexec:
+                cmd.extend([msiexec, '/i', cached_pkg])
                 if pkginfo[version_num].get('allusers', True):
                     cmd.append('ALLUSERS="1"')
             else:
@@ -1331,9 +1354,10 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
             ret[pkgname] = msg
             continue
 
-        if version_num is not None \
-                and version_num not in pkginfo \
-                and 'latest' in pkginfo:
+        if version_num is not None:
+            if version_num not in pkginfo and 'latest' in pkginfo:
+                version_num = 'latest'
+        elif 'latest' in pkginfo:
             version_num = 'latest'
 
         # Check to see if package is installed on the system
@@ -1346,7 +1370,7 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
             if version_num is None:
                 removal_targets.extend(old[pkgname])
             elif version_num not in old[pkgname] \
-                    and 'Not Found' not in old['pkgname'] \
+                    and 'Not Found' not in old[pkgname] \
                     and version_num != 'latest':
                 log.error('%s %s not installed', pkgname, version)
                 ret[pkgname] = {
@@ -1408,13 +1432,16 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
                     kwargs.get('extra_uninstall_flags', "")
                 )
 
+            #Compute msiexec string
+            use_msiexec, msiexec = _get_msiexec(pkginfo[target].get('msiexec', False))
+
             # Uninstall the software
             # Check Use Scheduler Option
             if pkginfo[target].get('use_scheduler', False):
 
                 # Build Scheduled Task Parameters
-                if pkginfo[target].get('msiexec'):
-                    cmd = 'msiexec.exe'
+                if use_msiexec:
+                    cmd = msiexec
                     arguments = ['/x']
                     arguments.extend(salt.utils.shlex_split(uninstall_flags))
                 else:
@@ -1442,8 +1469,8 @@ def remove(name=None, pkgs=None, version=None, **kwargs):
             else:
                 # Build the install command
                 cmd = []
-                if pkginfo[target].get('msiexec'):
-                    cmd.extend(['msiexec', '/x', expanded_cached_pkg])
+                if use_msiexec:
+                    cmd.extend([msiexec, '/x', expanded_cached_pkg])
                 else:
                     cmd.append(expanded_cached_pkg)
                 cmd.extend(salt.utils.shlex_split(uninstall_flags))

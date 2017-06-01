@@ -38,6 +38,8 @@ import salt.config
 import salt.syspaths
 from salt.modules.cmdmod import _parse_env
 import salt.utils
+import salt.utils.pkg
+import salt.utils.pkg.deb
 import salt.utils.systemd
 from salt.exceptions import (
     CommandExecutionError, MinionError, SaltInvocationError
@@ -367,6 +369,8 @@ def refresh_db(cache_valid_time=0):
 
         salt '*' pkg.refresh_db
     '''
+    # Remove rtag file to keep multiple refreshes from happening in pkg states
+    salt.utils.pkg.clear_rtag(__opts__)
     APT_LISTS_PATH = "/var/lib/apt/lists"
     ret = {}
     if cache_valid_time:
@@ -744,12 +748,13 @@ def install(name=None,
     env = _parse_env(kwargs.get('env'))
     env.update(DPKG_ENV_VARS.copy())
 
-    state = get_selections(state='hold')
-    hold_pkgs = state.get('hold')
-    to_unhold = []
-    for _pkg in hold_pkgs:
-        if _pkg in all_pkgs:
-            to_unhold.append(_pkg)
+    hold_pkgs = get_selections(state='hold').get('hold', [])
+    # all_pkgs contains the argument to be passed to apt-get install, which
+    # when a specific version is requested will be in the format name=version.
+    # Strip off the '=' if present so we can compare the held package names
+    # against the pacakges we are trying to install.
+    targeted_names = [x.split('=')[0] for x in all_pkgs]
+    to_unhold = [x for x in hold_pkgs if x in targeted_names]
 
     if to_unhold:
         unhold(pkgs=to_unhold)
@@ -1858,8 +1863,9 @@ def mod_repo(repo, saltenv='base', **kwargs):
 
         comments
             Sometimes you want to supply additional information, but not as
-            enabled configuration. Anything supplied for this list will be saved
-            in the repo configuration with a comment marker (#) in front.
+            enabled configuration. All comments provided here will be joined
+            into a single string and appended to the repo configuration with a
+            comment marker (#) before it.
 
             .. versionadded:: 2015.8.9
 
@@ -2089,13 +2095,17 @@ def mod_repo(repo, saltenv='base', **kwargs):
             if mod_source:
                 break
 
+    if 'comments' in kwargs:
+        kwargs['comments'] = \
+            salt.utils.pkg.deb.combine_comments(kwargs['comments'])
+
     if not mod_source:
         mod_source = sourceslist.SourceEntry(repo)
         if 'comments' in kwargs:
-            mod_source.comment = " ".join(str(c) for c in kwargs['comments'])
+            mod_source.comment = kwargs['comments']
         sources.list.append(mod_source)
     elif 'comments' in kwargs:
-        mod_source.comment = " ".join(str(c) for c in kwargs['comments'])
+        mod_source.comment = kwargs['comments']
 
     for key in kwargs:
         if key in _MODIFY_OK and hasattr(mod_source, key):

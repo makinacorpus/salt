@@ -42,6 +42,7 @@ from salt.utils.verify import verify_files
 import salt.exceptions
 import salt.ext.six as six
 from salt.ext.six.moves import range  # pylint: disable=import-error,redefined-builtin
+from salt.utils.yamldumper import SafeOrderedDumper
 
 
 def _sorted(mixins_or_funcs):
@@ -1765,7 +1766,7 @@ class ProxyMinionOptionParser(six.with_metaclass(OptionParserMeta,
         except AttributeError:
             minion_id = None
 
-        return config.minion_config(self.get_config_file_path(),
+        return config.proxy_config(self.get_config_file_path(),
                                     cache_minion_id=False,
                                     minion_id=minion_id)
 
@@ -1996,7 +1997,13 @@ class SaltCMDOptionParser(six.with_metaclass(OptionParserMeta,
         # Dump the master configuration file, exit normally at the end.
         if self.options.config_dump:
             cfg = config.master_config(self.get_config_file_path())
-            sys.stdout.write(yaml.dump(cfg, default_flow_style=False))
+            sys.stdout.write(
+                yaml.dump(
+                    cfg,
+                    default_flow_style=False,
+                    Dumper=SafeOrderedDumper
+                )
+            )
             sys.exit(salt.defaults.exitcodes.EX_OK)
 
         if self.options.doc:
@@ -2101,6 +2108,17 @@ class SaltCPOptionParser(six.with_metaclass(OptionParserMeta,
     _default_logging_level_ = config.DEFAULT_MASTER_OPTS['log_level']
     _default_logging_logfile_ = config.DEFAULT_MASTER_OPTS['log_file']
 
+    def _mixin_setup(self):
+        file_opts_group = optparse.OptionGroup(self, 'File Options')
+        file_opts_group.add_option(
+            '-n', '--no-compression',
+            default=True,
+            dest='compression',
+            action='store_false',
+            help='Disable gzip compression.'
+        )
+        self.add_option_group(file_opts_group)
+
     def _mixin_after_parsed(self):
         # salt-cp needs arguments
         if len(self.args) <= 1:
@@ -2114,8 +2132,9 @@ class SaltCPOptionParser(six.with_metaclass(OptionParserMeta,
                 self.config['tgt'] = self.args[0].split()
         else:
             self.config['tgt'] = self.args[0]
-        self.config['src'] = self.args[1:-1]
+        self.config['src'] = [os.path.realpath(x) for x in self.args[1:-1]]
         self.config['dest'] = self.args[-1]
+        self.config['gzip'] = True
 
     def setup_config(self):
         return config.master_config(self.get_config_file_path())

@@ -133,6 +133,14 @@
 
 # Cache subsystem module to use for minion data cache.
 #cache: localfs
+# Enables a fast in-memory cache booster and sets the expiration time.
+#memcache_expire_seconds: 0
+# Set a memcache limit in items (bank + key) per cache storage (driver + driver_opts).
+#memcache_max_items: 1024
+# Each time a cache storage got full cleanup all the expired items not just the oldest one.
+#memcache_full_cleanup: False
+# Enable collecting the memcache stats and log it on `debug` log level.
+#memcache_debug: False
 
 # Store all returns in the given returner.
 # Setting this option requires that any returner-specific configuration also
@@ -185,6 +193,9 @@
 # WARNING: This may have security implications if compromised minions auth with
 # a previous deleted minion ID.
 #preserve_minion_cache: False
+
+# Allow or deny minions from requesting their own key revocation
+#allow_minion_key_revoke: True
 
 # If max_minions is used in large installations, the master might experience
 # high-load situations because of having to check the number of connected
@@ -553,11 +564,11 @@
 #default_top: base
 
 # The hash_type is the hash to use when discovering the hash of a file on
-# the master server. The default is md5 but sha1, sha224, sha256, sha384
-# and sha512 are also supported.
+# the master server. The default is sha256, but md5, sha1, sha224, sha384 and
+# sha512 are also supported.
 #
-# WARNING: While md5 is also supported, do not use it due to the high chance
-# of possible collisions and thus security breach.
+# WARNING: While md5 and sha1 are also supported, do not use them due to the
+# high chance of possible collisions and thus security breach.
 #
 # Prior to changing this value, the master should be stopped and all Salt
 # caches should be cleared.

@@ -278,7 +278,7 @@ class ProcessManager(object):
             kwargs = {}
 
         if salt.utils.is_windows():
-            # Need to ensure that 'log_queue' is correctly transfered to
+            # Need to ensure that 'log_queue' is correctly transferred to
             # processes that inherit from 'MultiprocessingProcess'.
             if type(MultiprocessingProcess) is type(tgt) and (
                     issubclass(tgt, MultiprocessingProcess)):
@@ -700,8 +700,8 @@ def default_signals(*signals):
     old_signals = {}
     for signum in signals:
         try:
-            signal.signal(signum, signal.SIG_DFL)
             old_signals[signum] = signal.getsignal(signum)
+            signal.signal(signum, signal.SIG_DFL)
         except ValueError as exc:
             # This happens when a netapi module attempts to run a function
             # using wheel_async, because the process trying to register signals

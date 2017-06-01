@@ -1235,7 +1235,20 @@ def managed(name,
             Debian file type ``*.dsc`` files are also supported.
 
         **Inserting the Source Hash in the SLS Data**
-            Examples:
+
+        The source_hash can be specified as a simple checksum, like so:
+
+        .. code-block:: yaml
+
+            tomdroid-src-0.7.3.tar.gz:
+              file.managed:
+                - name: /tmp/tomdroid-src-0.7.3.tar.gz
+                - source: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.tar.gz
+                - source_hash: 79eef25f9b0b2c642c62b7f737d4f53f
+
+        .. note::
+            Releases prior to 2016.11.0 must also include the hash type, like
+            in the below example:
 
             .. code-block:: yaml
 
@@ -1244,7 +1257,6 @@ def managed(name,
                     - name: /tmp/tomdroid-src-0.7.3.tar.gz
                     - source: https://launchpad.net/tomdroid/beta/0.7.3/+download/tomdroid-src-0.7.3.tar.gz
                     - source_hash: md5=79eef25f9b0b2c642c62b7f737d4f53f
-
 
         Known issues:
             If the remote server URL has the hash file as an apparent
@@ -1323,6 +1335,13 @@ def managed(name,
             minion. Because the ``source`` option cannot be used with any of
             the ``contents`` options, setting the ``mode`` to ``keep`` is also
             incompatible with the ``contents`` options.
+
+        .. note:: keep does not work with salt-ssh.
+
+            As a consequence of how the files are transferred to the minion, and
+            the inability to connect back to the master with salt-ssh, salt is
+            unable to stat the file as it exists on the fileserver and thus
+            cannot mirror the mode on the salt-ssh minion
 
     template
         If this setting is applied, the named templating engine will be used to
@@ -1534,7 +1553,7 @@ def managed(name,
 
     tmp_ext
         Suffix for temp file created by ``check_cmd``. Useful for checkers
-        dependant on config file extension (e.g. the init-checkconf upstart
+        dependent on config file extension (e.g. the init-checkconf upstart
         config checker).
 
         .. code-block:: yaml
@@ -2182,7 +2201,11 @@ def directory(name,
     if not os.path.isabs(name):
         return _error(
             ret, 'Specified file {0} is not an absolute path'.format(name))
-    if os.path.isfile(name) or (not allow_symlink and os.path.islink(name)):
+
+    # Check for existing file or symlink
+    if os.path.isfile(name) or (not allow_symlink and os.path.islink(name)) \
+       or (force and os.path.islink(name)):
+        # Was a backupname specified
         if backupname is not None:
             # Make a backup first
             if os.path.lexists(backupname):
@@ -3358,7 +3381,11 @@ def replace(name,
 
     check_res, check_msg = _check_file(name)
     if not check_res:
-        return _error(ret, check_msg)
+        if ignore_if_missing and 'file not found' in check_msg:
+            ret['comment'] = 'No changes needed to be made'
+            return ret
+        else:
+            return _error(ret, check_msg)
 
     changes = __salt__['file.replace'](name,
                                        pattern,
@@ -3645,10 +3672,11 @@ def blockreplace(
     if changes:
         ret['pchanges'] = {'diff': changes}
         if __opts__['test']:
+            ret['changes']['diff'] = ret['pchanges']['diff']
             ret['result'] = None
             ret['comment'] = 'Changes would be made'
         else:
-            ret['changes'] = {'diff': changes}
+            ret['changes']['diff'] = ret['pchanges']['diff']
             ret['result'] = True
             ret['comment'] = 'Changes were made'
     else:
@@ -4707,6 +4735,11 @@ def copy(
     try:
         if os.path.isdir(source):
             shutil.copytree(source, name, symlinks=True)
+            for root, dirs, files in os.walk(name):
+                for dir_ in dirs:
+                    __salt__['file.lchown'](os.path.join(root, dir_), user, group)
+                for file_ in files:
+                    __salt__['file.lchown'](os.path.join(root, file_), user, group)
         else:
             shutil.copy(source, name)
         ret['changes'] = {name: source}

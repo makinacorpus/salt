@@ -4,7 +4,10 @@ Cache data in filesystem.
 
 .. versionadded:: 2016.11.0
 
-Expirations can be set in the relevant config file (``/etc/salt/master`` for
+The ``localfs`` Minion cache module is the default cache module and does not
+require any configuration.
+
+Expiration values can be set in the relevant config file (``/etc/salt/master`` for
 the master, ``/etc/salt/cloud`` for Salt Cloud, etc).
 '''
 from __future__ import absolute_import
@@ -18,10 +21,23 @@ from salt.exceptions import SaltCacheError
 import salt.utils
 import salt.utils.atomicfile
 
-# Don't shadow built-ins
-__func_alias__ = {'list_': 'list'}
-
 log = logging.getLogger(__name__)
+
+__func_alias__ = {'list': 'ls'}
+
+
+def __cachedir(kwargs=None):
+    if kwargs and 'cachedir' in kwargs:
+        return kwargs['cachedir']
+    return __opts__.get('cachedir', salt.syspaths.CACHE_DIR)
+
+
+def init_kwargs(kwargs):
+    return {'cachedir': __cachedir(kwargs)}
+
+
+def get_storage_id(kwargs):
+    return ('localfs', __cachedir(kwargs))
 
 
 def store(bank, key, data, cachedir):
@@ -96,7 +112,7 @@ def flush(bank, key=None, cachedir=None):
     Remove the key from the cache bank with all the key content.
     '''
     if cachedir is None:
-        cachedir = __opts__['cachedir']
+        cachedir = __cachedir()
 
     try:
         if key is None:
@@ -118,7 +134,7 @@ def flush(bank, key=None, cachedir=None):
     return True
 
 
-def list_(bank, cachedir):
+def ls(bank, cachedir):
     '''
     Return an iterable object containing all entries stored in the specified bank.
     '''
@@ -135,11 +151,11 @@ def list_(bank, cachedir):
         )
     ret = []
     for item in items:
-        ret.append(item.rstrip('.p'))
+        if item.endswith('.p'):
+            ret.append(item.rstrip(item[-2:]))
+        else:
+            ret.append(item)
     return ret
-
-
-getlist = list_
 
 
 def contains(bank, key, cachedir):

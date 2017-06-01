@@ -20,7 +20,11 @@ import multiprocessing
 import traceback
 
 # Import third party libs
-from Crypto.PublicKey import RSA
+try:
+    from Cryptodome.PublicKey import RSA
+except ImportError:
+    # Fall back to pycrypto
+    from Crypto.PublicKey import RSA
 # pylint: disable=import-error,no-name-in-module,redefined-builtin
 import salt.ext.six as six
 from salt.ext.six.moves import range
@@ -455,7 +459,7 @@ class Master(SMaster):
             os.chdir('/')
         except OSError as err:
             errors.append(
-                'Cannot change to root directory ({1})'.format(err)
+                'Cannot change to root directory ({0})'.format(err)
             )
 
         fileserver = salt.fileserver.Fileserver(self.opts)
@@ -1568,6 +1572,11 @@ class AESFuncs(object):
         :return: True if key was revoked, False if not
         '''
         load = self.__verify_load(load, ('id', 'tok'))
+
+        if not self.opts.get('allow_minion_key_revoke', False):
+            log.warning('Minion {0} requested key revoke, but allow_minion_key_revoke is False'.format(load['id']))
+            return load
+
         if load is False:
             return load
         else:

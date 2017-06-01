@@ -41,6 +41,8 @@ except ImportError:
 
 # Import salt libs
 import salt.utils
+import salt.utils.pkg
+import salt.ext.six as six
 import salt.utils.itertools
 import salt.utils.systemd
 import salt.utils.decorators as decorators
@@ -196,10 +198,10 @@ def _get_repo_options(**kwargs):
     in the yum command, based on the kwargs.
     '''
     # Get repo options from the kwargs
-    fromrepo = kwargs.get('fromrepo', '')
-    repo = kwargs.get('repo', '')
-    disablerepo = kwargs.get('disablerepo', '')
-    enablerepo = kwargs.get('enablerepo', '')
+    fromrepo = kwargs.pop('fromrepo', '')
+    repo = kwargs.pop('repo', '')
+    disablerepo = kwargs.pop('disablerepo', '')
+    enablerepo = kwargs.pop('enablerepo', '')
 
     # Support old 'repo' argument
     if repo and not fromrepo:
@@ -232,7 +234,7 @@ def _get_excludes_option(**kwargs):
     Returns a list of '--disableexcludes' option to be used in the yum command,
     based on the kwargs.
     '''
-    disable_excludes = kwargs.get('disableexcludes', '')
+    disable_excludes = kwargs.pop('disableexcludes', '')
     ret = []
     if disable_excludes:
         log.info('Disabling excludes for \'%s\'', disable_excludes)
@@ -245,11 +247,25 @@ def _get_branch_option(**kwargs):
     Returns a list of '--branch' option to be used in the yum command,
     based on the kwargs. This feature requires 'branch' plugin for YUM.
     '''
-    branch = kwargs.get('branch', '')
+    branch = kwargs.pop('branch', '')
     ret = []
     if branch:
         log.info('Adding branch \'%s\'', branch)
         ret.append('--branch=\'{0}\''.format(branch))
+    return ret
+
+
+def _get_extra_options(**kwargs):
+    '''
+    Returns list of extra options for yum
+    '''
+    ret = []
+    kwargs = salt.utils.clean_kwargs(**kwargs)
+    for key, value in six.iteritems(kwargs):
+        if isinstance(key, six.string_types):
+            ret.append('--{0}=\'{1}\''.format(key, value))
+        elif value is True:
+            ret.append('--{0}'.format(key))
     return ret
 
 
@@ -455,10 +471,11 @@ def latest_version(*names, **kwargs):
     def _check_cur(pkg):
         if pkg.name in cur_pkgs:
             for installed_version in cur_pkgs[pkg.name]:
-                # If any installed version is greater than the one found by
-                # yum/dnf list available, then it is not an upgrade.
+                # If any installed version is greater than (or equal to) the
+                # one found by yum/dnf list available, then it is not an
+                # upgrade.
                 if salt.utils.compare_versions(ver1=installed_version,
-                                               oper='>',
+                                               oper='>=',
                                                ver2=pkg.version,
                                                cmp_func=version_cmp):
                     return False
@@ -864,6 +881,8 @@ def refresh_db(**kwargs):
 
         salt '*' pkg.refresh_db
     '''
+    # Remove rtag file to keep multiple refreshes from happening in pkg states
+    salt.utils.pkg.clear_rtag(__opts__)
     retcodes = {
         100: True,
         0: None,
@@ -914,6 +933,7 @@ def install(name=None,
             skip_verify=False,
             pkgs=None,
             sources=None,
+            downloadonly=False,
             reinstall=False,
             normalize=True,
             update_holds=False,
@@ -971,6 +991,9 @@ def install(name=None,
 
     skip_verify
         Skip the GPG verification check (e.g., ``--nogpgcheck``)
+
+    downloadonly
+        Only download the packages, do not install.
 
     version
         Install a specific version of the package, e.g. 1.2.3-4.el5. Ignored
@@ -1228,6 +1251,8 @@ def install(name=None,
                 cmd.extend(args)
         if skip_verify:
             cmd.append('--nogpgcheck')
+        if downloadonly:
+            cmd.append('--downloadonly')
 
     try:
         holds = list_holds(full=False)
@@ -1482,10 +1507,21 @@ def upgrade(name=None,
 
         .. versionadded:: 2016.3.0
 
+
+    .. note::
+
+        To add extra arguments to the `yum upgrade` command, pass them as key
+        word arguments.  For arguments without assignments, pass `True`
+
+    .. code-block:: bash
+
+        salt '*' pkg.upgrade security=True exclude='kernel*'
+
     '''
     repo_arg = _get_repo_options(**kwargs)
     exclude_arg = _get_excludes_option(**kwargs)
     branch_arg = _get_branch_option(**kwargs)
+    extra_args = _get_extra_options(**kwargs)
 
     if salt.utils.is_true(refresh):
         refresh_db(**kwargs)
@@ -1514,7 +1550,7 @@ def upgrade(name=None,
             and __salt__['config.get']('systemd.scope', True):
         cmd.extend(['systemd-run', '--scope'])
     cmd.extend([_yum(), '--quiet', '-y'])
-    for args in (repo_arg, exclude_arg, branch_arg):
+    for args in (repo_arg, exclude_arg, branch_arg, extra_args):
         if args:
             cmd.extend(args)
     if skip_verify:

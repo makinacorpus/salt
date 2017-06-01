@@ -126,6 +126,11 @@ def _config_logic(loaded_result, test=False, commit_config=True, loaded_config=N
     if _compare.get('result', False):
         loaded_result['diff'] = _compare.get('out')
         loaded_result.pop('out', '')  # not needed
+    else:
+        loaded_result['diff'] = None
+        loaded_result['result'] = False
+        loaded_result['comment'] = _compare.get('comment')
+        return loaded_result
 
     _loaded_res = loaded_result.get('result', False)
 
@@ -370,16 +375,28 @@ def cli(*commands):
     # in case of errors, they'll be catched in the proxy
 
 
-def traceroute(destination, source=None, ttl=None, timeout=None):
+def traceroute(destination, source=None, ttl=None, timeout=None, vrf=None):
 
     '''
     Calls the method traceroute from the NAPALM driver object and returns a dictionary with the result of the traceroute
     command executed on the device.
 
-    :param destination: Hostname or address of remote host
-    :param source: Source address to use in outgoing traceroute packets
-    :param ttl: IP maximum time-to-live value (or IPv6 maximum hop-limit value)
-    :param timeout: Number of seconds to wait for response (seconds)
+    destination
+        Hostname or address of remote host
+
+    source
+        Source address to use in outgoing traceroute packets
+
+    ttl
+        IP maximum time-to-live value (or IPv6 maximum hop-limit value)
+
+    timeout
+        Number of seconds to wait for response (seconds)
+
+    vrf
+        VRF (routing instance) for traceroute attempt
+
+        .. versionadded:: 2016.11.4
 
     CLI Example:
 
@@ -395,22 +412,39 @@ def traceroute(destination, source=None, ttl=None, timeout=None):
             'destination': destination,
             'source': source,
             'ttl': ttl,
-            'timeout': timeout
+            'timeout': timeout,
+            'vrf': vrf
         }
     )
 
 
-def ping(destination, source=None, ttl=None, timeout=None, size=None, count=None):
+def ping(destination, source=None, ttl=None, timeout=None, size=None, count=None, vrf=None):
 
     '''
     Executes a ping on the network device and returns a dictionary as a result.
 
-    :param destination: Hostname or IP address of remote host
-    :param source: Source address of echo request
-    :param ttl: IP time-to-live value (IPv6 hop-limit value) (1..255 hops)
-    :param timeout: Maximum wait time after sending final packet (seconds)
-    :param size: Size of request packets (0..65468 bytes)
-    :param count: Number of ping requests to send (1..2000000000 packets)
+    destination
+        Hostname or IP address of remote host
+
+    source
+        Source address of echo request
+
+    ttl
+        IP time-to-live value (IPv6 hop-limit value) (1..255 hops)
+
+    timeout
+        Maximum wait time after sending final packet (seconds)
+
+    size
+        Size of request packets (0..65468 bytes)
+
+    count
+        Number of ping requests to send (1..2000000000 packets)
+
+    vrf
+        VRF (routing instance) for ping attempt
+
+        .. versionadded:: 2016.11.4
 
     CLI Example:
 
@@ -429,7 +463,8 @@ def ping(destination, source=None, ttl=None, timeout=None, size=None, count=None
             'ttl': ttl,
             'timeout': timeout,
             'size': size,
-            'count': count
+            'count': count,
+            'vrf': vrf
         }
     )
 
@@ -508,7 +543,7 @@ def ipaddrs():
     Returns all configured IP addresses on all interfaces as a dictionary of dictionaries.\
     Keys of the main dictionary represent the name of the interface.\
     Values of the main dictionary represent are dictionaries that may consist of two keys\
-    'ipv4' and 'ipv6' (one, both or none) which are themselvs dictionaries witht the IP addresses as keys.\
+    'ipv4' and 'ipv6' (one, both or none) which are themselvs dictionaries with the IP addresses as keys.\
 
     CLI Example:
 
@@ -752,7 +787,7 @@ def load_config(filename=None,
 
     To avoid committing the configuration, set the argument ``test`` to ``True`` and will discard (dry run).
 
-    To keep the chnages but not commit, set ``commit`` to ``False``.
+    To keep the changes but not commit, set ``commit`` to ``False``.
 
     To replace the config, set ``replace`` to ``True``.
 
@@ -770,7 +805,7 @@ def load_config(filename=None,
         Commit? Default: ``True``.
 
     debug: False
-        Debug mode. Will insert a new key under the output dictionary, as ``loaded_config`` contaning the raw
+        Debug mode. Will insert a new key under the output dictionary, as ``loaded_config`` containing the raw
         configuration loaded on the device.
 
         .. versionadded:: 2016.11.2
@@ -859,7 +894,7 @@ def load_template(template_name,
     To avoid committing the configuration, set the argument ``test`` to ``True``
     and will discard (dry run).
 
-    To preserve the chnages, set ``commit`` to ``False``.
+    To preserve the changes, set ``commit`` to ``False``.
     However, this is recommended to be used only in exceptional cases
     when there are applied few consecutive states
     and/or configuration changes.
@@ -883,7 +918,7 @@ def load_template(template_name,
 
         Placing the template under ``/etc/salt/states/templates/example.jinja``,
         it can be used as ``salt://templates/example.jinja``.
-        Alternatively, for local files, the user can specify the abolute path.
+        Alternatively, for local files, the user can specify the absolute path.
         If remotely, the source can be retrieved via ``http``, ``https`` or ``ftp``.
 
         Examples:
@@ -965,7 +1000,7 @@ def load_template(template_name,
 
     debug: False
         Debug mode. Will insert a new key under the output dictionary,
-        as ``loaded_config`` contaning the raw result after the template was rendered.
+        as ``loaded_config`` containing the raw result after the template was rendered.
 
         .. versionadded:: 2016.11.2
 
@@ -984,7 +1019,7 @@ def load_template(template_name,
 
         .. note::
 
-            Do not explicitely specify this argument.
+            Do not explicitly specify this argument.
             This represents any other variable that will be sent
             to the template rendering system.
             Please see the examples below!
@@ -1123,7 +1158,7 @@ def load_template(template_name,
             if template_path and not file_exists:
                 template_name = __salt__['file.join'](template_path, template_name)
                 if not saltenv:
-                    # no saltenv overriden
+                    # no saltenv overridden
                     # use the custom template path
                     saltenv = template_path if not salt_render else 'base'
             elif salt_render and not saltenv:
@@ -1165,6 +1200,7 @@ def load_template(template_name,
                     _loaded['comment'] = 'Error while rendering the template.'
                     return _loaded
                 _rendered = open(_temp_tpl_file).read()
+                __salt__['file.remove'](_temp_tpl_file)
             else:
                 return _loaded  # exit
 
@@ -1313,8 +1349,8 @@ def config_control():
     If differences found, will try to commit.
     In case commit unsuccessful, will try to rollback.
 
-    :return: A tuple with a boolean that specifies if the config was changed/commited/rollbacked on the device.\
-    And a string that provides more details of the reason why the configuration was not commited properly.
+    :return: A tuple with a boolean that specifies if the config was changed/committed/rollbacked on the device.\
+    And a string that provides more details of the reason why the configuration was not committed properly.
 
     CLI Example:
 

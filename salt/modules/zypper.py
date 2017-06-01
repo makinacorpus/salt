@@ -35,6 +35,7 @@ from xml.parsers.expat import ExpatError
 
 # Import salt libs
 import salt.utils
+import salt.utils.pkg
 import salt.utils.systemd
 from salt.exceptions import (
     CommandExecutionError, MinionError)
@@ -874,6 +875,8 @@ def refresh_db():
 
         salt '*' pkg.refresh_db
     '''
+    # Remove rtag file to keep multiple refreshes from happening in pkg states
+    salt.utils.pkg.clear_rtag(__opts__)
     ret = {}
     out = __zypper__.refreshable.call('refresh', '--force')
 
@@ -1042,7 +1045,7 @@ def install(name=None,
     if not refresh:
         cmd_install.insert(0, '--no-refresh')
     if skip_verify:
-        cmd_install.append('--no-gpg-checks')
+        cmd_install.insert(0, '--no-gpg-checks')
     if downloadonly:
         cmd_install.append('--download-only')
     if fromrepo:
@@ -1068,6 +1071,12 @@ def install(name=None,
 
     __context__.pop('pkg.list_pkgs', None)
     new = list_pkgs()
+
+    # Handle packages which report multiple new versions
+    # (affects only kernel packages at this point)
+    for pkg in new:
+        new[pkg] = new[pkg].split(',')[-1]
+
     ret = salt.utils.compare_dicts(old, new)
 
     if errors:
@@ -1175,6 +1184,11 @@ def upgrade(refresh=True,
     __zypper__(systemd_scope=_systemd_scope()).noraise.call(*cmd_update)
     __context__.pop('pkg.list_pkgs', None)
     new = list_pkgs()
+
+    # Handle packages which report multiple new versions
+    # (affects only kernel packages at this point)
+    for pkg in new:
+        new[pkg] = new[pkg].split(',')[-1]
     ret = salt.utils.compare_dicts(old, new)
 
     if __zypper__.exit_code not in __zypper__.SUCCESS_EXIT_CODES:

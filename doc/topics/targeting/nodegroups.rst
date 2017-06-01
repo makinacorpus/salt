@@ -82,14 +82,14 @@ A simple list of minion IDs would traditionally be defined like this:
 .. code-block:: yaml
 
     nodegroups:
-      - group1: L@host1,host2,host3
+      group1: L@host1,host2,host3
 
 They can now also be defined as a YAML list, like this:
 
 .. code-block:: yaml
 
     nodegroups:
-      - group1:
+      group1:
         - host1
         - host2
         - host3
@@ -122,7 +122,7 @@ example, to check if a minion is in the 'webserver' nodegroup:
     nodegroups:
       webserver: 'G@os:Debian and L@minion1,minion2'
 
-.. code-block:: yaml
+.. code-block:: jinja
 
     {% if grains.id in salt['pillar.get']('master:nodegroups:webserver', [])
     and grains.os in salt['pillar.get']('master:nodegroups:webserver', []) %}
