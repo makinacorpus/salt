@@ -32,7 +32,8 @@ DIVERGENCES TO KEEP AT ALL COSTS:
 
 Backports
 -----------
-
+- 2015.8:
+    - [service.dead](https://github.com/saltstack/salt/commit/49962880c3b230c7fbcd174c1dba93a88d284ffe)
 - Retry states:
     - [856407ee27dff368d44fafdda9918de86f36ce47](https://github.com/saltstack/salt/commit/856407ee27dff368d44fafdda9918de86f36ce47)
     - [6658c2f12b07254b16b67691e1876ed36df9be26](https://github.com/saltstack/salt/commit/6658c2f12b07254b16b67691e1876ed36df9be26)
