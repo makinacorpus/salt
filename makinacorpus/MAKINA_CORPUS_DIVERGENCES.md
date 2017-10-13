@@ -38,8 +38,6 @@ DIVERGENCES TO KEEP AT ALL COSTS:
 
 Backports
 -----------
-- 2015.8:
-    - [service.dead](https://github.com/saltstack/salt/commit/49962880c3b230c7fbcd174c1dba93a88d284ffe)
 - Retry states:
     - [856407ee27dff368d44fafdda9918de86f36ce47](https://github.com/saltstack/salt/commit/856407ee27dff368d44fafdda9918de86f36ce47)
     - [6658c2f12b07254b16b67691e1876ed36df9be26](https://github.com/saltstack/salt/commit/6658c2f12b07254b16b67691e1876ed36df9be26)
@@ -50,6 +48,8 @@ Backports
 
 Merged
 -------
+- 2015.8:
+    - [service.dead](https://github.com/saltstack/salt/commit/49962880c3b230c7fbcd174c1dba93a88d284ffe) 
 - [backport 1](https://github.com/makinacorpus/salt/commit/bed138bfa1e375ca65441c6821e398895d69d7aa)
 - [backport pip from salt/develop](https://github.com/makinacorpus/salt/commit/c6b79a229f7fc81d322e81c484c0b627f130c39c)
 - [Backport mysql from salt/develop](https://github.com/makinacorpus/salt/commit/b7c109a35ba41c7c74d71b191ba6144bcf36d425)
