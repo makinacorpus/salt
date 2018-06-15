@@ -240,7 +240,10 @@ def format_log(ret):
                                 new = 'absent'
                             # This must be able to handle unicode as some package names contain
                             # non-ascii characters like "Français" or "Español". See Issue #33605.
-                            msg += u'\'{0}\' changed from \'{1}\' to \'{2}\'\n'.format(pkg, old, new)
+                            try:
+                                msg += u'\'{0}\' changed from \'{1}\' to \'{2}\'\n'.format(pkg, old, new)
+                            except Exception:
+                                pass
             if not msg:
                 msg = str(ret['changes'])
             if ret['result'] is True or ret['result'] is None:
