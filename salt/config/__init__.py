@@ -3379,7 +3379,6 @@ def apply_master_config(overrides=None, defaults=None):
     '''
     Returns master configurations dict.
     '''
-    import salt.crypt
     if defaults is None:
         defaults = DEFAULT_MASTER_OPTS
 

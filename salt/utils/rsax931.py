@@ -72,7 +72,10 @@ def _init_libcrypto():
         if libcrypto.OPENSSL_init_crypto(OPENSSL_INIT_NO_LOAD_CONFIG |
                                          OPENSSL_INIT_ADD_ALL_CIPHERS |
                                          OPENSSL_INIT_ADD_ALL_DIGESTS, None) != 1:
-            raise OSError("Failed to initialize OpenSSL library (OPENSSL_init_crypto failed)")
+            try:
+                libcrypto.OPENSSL_init_crypto()
+            except Exception:
+                raise OSError("Failed to initialize OpenSSL library (OPENSSL_init_crypto failed)")
     except AttributeError:
         # Support for OpenSSL < 1.1 (OPENSSL_API_COMPAT < 0x10100000L)
         libcrypto.OPENSSL_no_config()
